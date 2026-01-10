@@ -34,9 +34,9 @@ celeryLogger.setLevel(10)
 celeryLogger.addHandler(celeryLogHandler)
 celeryLogger.info('Logging enabled Tasks')
 
-# Import Celery app from celery.py
-# This import happens after django.setup() to ensure proper initialization
-from .celery import app
+# Define task functions without decorators to avoid import errors
+# They will be wrapped with task decorators when first accessed
+# This allows Django to start even if Celery imports fail
 
 
 def checkIfTaskCancelled(msg):
@@ -76,7 +76,6 @@ class RPOS7Category(object):
         self.lovSequence    = None
         self.status         = None
 
-@app.task(name="sync_categories_click")
 def sync_categories_click():
     from celery.exceptions import Ignore
     context = {}
@@ -217,7 +216,6 @@ class RPOS7CategoryItem(object):
     itemId           = None
     level            = None
 
-@app.task(name="sync_items_click")
 def sync_items_click():
         from celery.exceptions import Ignore
         context = {}
@@ -349,7 +347,11 @@ def get_task_status(task_id):
     try:
         from .celery import app as celery_app
     except ImportError:
-        from celery import current_app as celery_app
+        try:
+            from celery import current_app as celery_app
+        except ImportError:
+            celeryLogger.error('Cannot get Celery app for task status check')
+            return {'status': 'UNKNOWN', 'progress': 0}
     
     task = AsyncResult(task_id, app=celery_app)
     status = task.status
@@ -361,4 +363,23 @@ def get_task_status(task_id):
     elif status == 'PROGRESS':
         progress = task.info.get('progress', 0)
     return {'status': status, 'progress': progress}
+
+# Register tasks with Celery app lazily to avoid import errors during Django startup
+# Store original functions
+_sync_categories_click_func = sync_categories_click
+_sync_items_click_func = sync_items_click
+
+# Try to register tasks with Celery
+try:
+    from .celery import app
+    # Apply task decorators to create task objects
+    sync_categories_click = app.task(name="sync_categories_click")(_sync_categories_click_func)
+    sync_items_click = app.task(name="sync_items_click")(_sync_items_click_func)
+except (ImportError, AttributeError) as e:
+    # If we can't import/register tasks, keep original functions
+    # They won't have .delay() method but Django can still start
+    celeryLogger.error(f'Could not register Celery tasks: {e}. Tasks may not work properly.')
+    # Keep original functions - they'll fail if .delay() is called but at least Django starts
+    sync_categories_click = _sync_categories_click_func
+    sync_items_click = _sync_items_click_func
 
