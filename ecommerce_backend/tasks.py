@@ -3,16 +3,15 @@ import os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ecommerce_backend.settings')
 import django
 django.setup()
-from celery import Celery
+from celery import shared_task
 # import logging
 import logging,os
 from . import settings
-# from celery import shared_task
 # from celery.schedules import crontab
 logger = logging.getLogger(__name__)
 import requests
 from django.http import JsonResponse
-from inara.models import Item,Category,TaskProgress,task_canceled,task_stopped
+from inara.models import Item,Category,CategoryItem,TaskProgress,task_canceled,task_stopped
 from unidecode import unidecode
 import re
 import random
@@ -36,21 +35,6 @@ celeryLogger = logging.getLogger(__name__)
 celeryLogger.setLevel(10)
 celeryLogger.addHandler(celeryLogHandler)
 celeryLogger.info('Logging enabled Tasks')
-
-# Set the default Django settings module for the 'celery' program.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ecommerce_backend.settings')
-# logger = logging.getLogger(__name__)
-# django.setup()
-app = Celery('ecommerce_backend')
-app.config_from_object('ecommerce_backend.settings')
-# Using a string here means the worker doesn't have to serialize
-# the configuration object to child processes.
-# - namespace='CELERY' means all celery-related configuration keys
-#   should have a `CELERY_` prefix.
-# app.config_from_object('django.conf:settings')
-
-# Load task modules from all registered Django apps.
-# app.autodiscover_tasks()
 
 
 def checkIfTaskCancelled(msg):
@@ -88,7 +72,7 @@ class RPOS7Category(object):
         self.lovSequence    = None
         self.status         = None
 
-@app.task(name="sync_categories_click")
+@shared_task(name="sync_categories_click")
 def sync_categories_click():
     context = {}
     errorList = []
@@ -228,7 +212,7 @@ class RPOS7CategoryItem(object):
     itemId           = None
     level            = None
 
-@app.task(name="sync_items_click")
+@shared_task(name="sync_items_click")
 def sync_items_click():
         context = {}
         errorList = []
@@ -354,7 +338,13 @@ def sync_items_click():
 
 
 def get_task_status(task_id):
-    task = AsyncResult(task_id, app=app)
+    # Import app here to avoid circular imports during Django startup
+    try:
+        from .celery import app as celery_app
+    except ImportError:
+        from celery import current_app as celery_app
+    
+    task = AsyncResult(task_id, app=celery_app)
     status = task.status
     progress = 0 
     if status == 'SUCCESS':
@@ -362,6 +352,6 @@ def get_task_status(task_id):
     elif status == 'FAILURE':
         progress = 0
     elif status == 'PROGRESS':
-        progress = task.info['progress']
+        progress = task.info.get('progress', 0)
     return {'status': status, 'progress': progress}
 
