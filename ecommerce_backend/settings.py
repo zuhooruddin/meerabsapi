@@ -200,10 +200,11 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'meerabs_wardrobe',
         'USER': 'meerabs',
-        'PASSWORD': 'meerabs',
+        'PASSWORD': 'MeerabsSecure2026!',
         'HOST': 'localhost',
         'PORT': '5432',
     }
+
 }
 # DATABASES = {
 #     'default': {
