@@ -164,7 +164,7 @@ class CategorySerializer(serializers.ModelSerializer):
     # parentId_name = serializers.CharField(source='name')
     class Meta:
         model = Category
-        fields = ('id','extPosId','extPosParentId','parentId','name','slug','description','icon','appliesOnline','syncTs','metaUrl','metaTitle','metaDescription','isBrand','posType','status')
+        fields = ('id','parentId','name','slug','description','icon','appliesOnline','syncTs','metaUrl','metaTitle','metaDescription','isBrand','status')
 
 
 ################################Local Category###########################################################
@@ -181,7 +181,7 @@ class CategorySerializerDepth(serializers.ModelSerializer):
     # parentId_name = serializers.CharField(source='name')
     class Meta:
         model = Category
-        fields = ('id','extPosId','extPosParentId','parentId','name','slug','description','icon','appliesOnline','syncTs','metaUrl','metaTitle','metaDescription','isBrand','posType','status')
+        fields = ('id','parentId','name','slug','description','icon','appliesOnline','syncTs','metaUrl','metaTitle','metaDescription','isBrand','status')
         depth = 1
 
 

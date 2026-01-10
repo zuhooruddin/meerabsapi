@@ -25,9 +25,9 @@ class Command(BaseCommand):
         parser.add_argument(
             '--method',
             type=str,
-            choices=['extposid', 'name', 'name_sku', 'name_slug', 'all'],
+            choices=['name', 'name_sku', 'name_slug', 'all'],
             default='all',
-            help='Method to detect duplicates: extposid, name, name_sku, name_slug, or all (default: all)',
+            help='Method to detect duplicates: name, name_sku, name_slug, or all (default: all)',
         )
         parser.add_argument(
             '--keep',
@@ -53,15 +53,6 @@ class Command(BaseCommand):
         total_duplicates = 0
         total_to_delete = 0
 
-        # Find duplicates by extPosId
-        if method in ['extposid', 'all']:
-            self.stdout.write('\n' + '='*60)
-            self.stdout.write('Checking duplicates by extPosId...')
-            extposid_dups = self.find_duplicates_by_extposid()
-            if extposid_dups:
-                duplicates_found['extPosId'] = extposid_dups
-                total_duplicates += len(extposid_dups)
-                self.stdout.write(self.style.WARNING(f'Found {len(extposid_dups)} groups of duplicates by extPosId'))
 
         # Find duplicates by name (case-insensitive)
         if method in ['name', 'all']:
@@ -140,24 +131,6 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS(f'\n✓ Removed {total_to_delete} duplicate products successfully!'))
 
-    def find_duplicates_by_extposid(self):
-        """Find duplicates by extPosId"""
-        duplicates = defaultdict(list)
-        
-        # Find extPosIds that appear more than once
-        extposid_counts = Item.objects.values('extPosId').annotate(
-            count=Count('id')
-        ).filter(count__gt=1, status=Item.ACTIVE)
-        
-        for entry in extposid_counts:
-            items = Item.objects.filter(
-                extPosId=entry['extPosId'],
-                status=Item.ACTIVE
-            ).order_by('id')
-            if items.count() > 1:
-                duplicates[entry['extPosId']] = list(items)
-        
-        return dict(duplicates)
 
     def find_duplicates_by_name(self):
         """Find duplicates by name (case-insensitive)"""

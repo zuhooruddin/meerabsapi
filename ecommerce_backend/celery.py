@@ -76,27 +76,13 @@ def debug_task(message):
 
 @app.task
 def sync_categories():
-    context = {'Key':'success'}
-    category_module_name = 'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.category'
-    category_class_name = 'RPOS7CategorySync'
-    className = views.class_for_name(category_module_name, category_class_name)
-    syncObj = className()
-    # extPos = request.pos
-    extPos = 'Gofrugal_RPOS7'
-    syncObj.syncCategories()
-    celeryLogger.info("%s" %('Sync Categories'))
-    print(f'Request: sync Categories')
+    celeryLogger.info("POS sync functionality has been removed")
+    print('POS sync functionality has been removed')
 
 @app.task
 def sync_items():
-    # context = {'Key':'success'}
-    item_module_name = 'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.item'
-    item_class_name = 'RPOS7ItemSync'
-    className = views.class_for_name(item_module_name, item_class_name)
-    syncObj = className()
-    # extPos = request.pos
-    # extPos = 'Gofrugal_RPOS7'
-    syncObj.syncItems()
+    celeryLogger.info("POS sync functionality has been removed")
+    print('POS sync functionality has been removed')
 
 
     

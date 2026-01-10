@@ -191,7 +191,6 @@ class Command(BaseCommand):
                     'appliesOnline': 1,
                     'showAtHome': 1,  # Show on home page
                     'priority': idx,
-                    'posType': Category.INTERNAL,
                     'metaUrl': f'/categories/{subcat_data["slug"]}',
                     'metaTitle': subcat_data['metaTitle'],
                     'metaDescription': subcat_data['metaDescription'],
@@ -378,7 +377,7 @@ class Command(BaseCommand):
             },
         }
         
-        ext_pos_id = 100000
+        product_counter = 100000
         
         for category_slug, category_info in categories.items():
             if category_slug == 'main':
@@ -401,15 +400,15 @@ class Command(BaseCommand):
                     # Generate SEO-friendly slug
                     base_slug = slugify(base_name)
                     weight_slug = slugify(weight)
-                    slug = f"{base_slug}-{weight_slug}-{ext_pos_id}"
+                    slug = f"{base_slug}-{weight_slug}-{product_counter}"
                     
                     # Generate SKU
                     cat_prefix = category_slug.replace('chitrali-', '').replace('-', '')[:3].upper()
-                    sku = f"CHIT-{cat_prefix}-{ext_pos_id:06d}"
+                    sku = f"CHIT-{cat_prefix}-{product_counter:06d}"
                     
                     # Check if product already exists
                     if Item.objects.filter(slug=slug).exists() or Item.objects.filter(sku=sku).exists():
-                        ext_pos_id += 1
+                        product_counter += 1
                         continue
                     
                     # Generate prices
@@ -426,7 +425,6 @@ class Command(BaseCommand):
                     
                     # Create product with SEO
                     product = Item.objects.create(
-                        extPosId=ext_pos_id,
                         name=product_name,
                         slug=slug,
                         sku=sku,
@@ -441,7 +439,7 @@ class Command(BaseCommand):
                         status=Item.ACTIVE,
                         isNewArrival=random.choice([0, 1]),
                         isFeatured=random.choice([0, 1]) if i % 10 == 0 else 0,
-                        manufacturer='Chitral Hive',
+                        manufacturer='Meerab\'s Wardrobe',
                         metaUrl=meta_url,
                         metaTitle=f"{product_name} - Buy Online in Pakistan | ChitralHive",
                         metaDescription=f"{description[:120]}... Buy {product_name} online in Pakistan from ChitralHive. Premium quality, free delivery across Pakistan including Karachi, Lahore, Islamabad, Rawalpindi, Peshawar, and all major cities.",
@@ -457,14 +455,14 @@ class Command(BaseCommand):
                     )
                     
                     products_created += 1
-                    ext_pos_id += 1
+                    product_counter += 1
                     
                     if products_created % 100 == 0:
                         self.stdout.write(f'Created {products_created} products...')
                         
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f'Error creating product: {str(e)}'))
-                    ext_pos_id += 1
+                    product_counter += 1
                     continue
         
         return products_created
@@ -512,17 +510,17 @@ class Command(BaseCommand):
             },
         ]
         
-        ext_pos_id = 200000
+        bundle_counter = 200000
         
         for bundle_data in bundle_templates:
             try:
                 # Generate SEO-friendly slug
                 slug = slugify(bundle_data['name'])
-                sku = f"CHIT-BUNDLE-{ext_pos_id:06d}"
+                sku = f"CHIT-BUNDLE-{bundle_counter:06d}"
                 
                 # Check if bundle already exists
                 if Bundle.objects.filter(slug=slug).exists() or Bundle.objects.filter(sku=sku).exists():
-                    ext_pos_id += 1
+                    bundle_counter += 1
                     continue
                 
                 # Get category
@@ -572,13 +570,13 @@ class Command(BaseCommand):
                         )
                 
                 bundles_created += 1
-                ext_pos_id += 1
+                bundle_counter += 1
                 
                 self.stdout.write(self.style.SUCCESS(f'Created bundle: {bundle.name}'))
                 
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f'Error creating bundle: {str(e)}'))
-                ext_pos_id += 1
+                bundle_counter += 1
                 continue
         
         return bundles_created

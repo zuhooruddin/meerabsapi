@@ -24,7 +24,6 @@ from functools import wraps
 from django.http import JsonResponse
 import requests
 from inara.serializers import *
-from inara.core.middlewares.externalPOS.Gofrugal_RPOS7.category import RPOS7Category,RPOS7CategorySync
 import json
 import environ, boto3
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
@@ -140,14 +139,6 @@ def is_admin(view):
                 return JsonResponse(status)          
     return wrapper
 
-module_name = 'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.category'
-class_name = 'RPOS7CategorySync'
-
-item_module_name = 'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.item'
-item_class_name = 'RPOS7ItemSync'
-
-customer_module_name = 'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.ecustomer'
-customer_class_name = 'RPOS7CustomersSync'
 
 class GoogleLoginView(SocialLoginView):
     authentication_classes = [] # disable authentication, make sure to override `allowed origins` in settings.py in production!
@@ -368,12 +359,7 @@ def stopTaskSync(request):
 ############ Categories ############
 
 def syncCategories():
-    context = {'Key':'success'}
-    className = class_for_name(module_name, class_name)
-    syncObj = className()
-    # extPos = request.pos
-    extPos = 'Gofrugal_RPOS7'
-    syncObj.syncCategories()
+    context = {'Key':'success', 'ErrorMsg': 'POS sync functionality has been removed'}
     return JsonResponse(context)
 
 def getProductCategories(request):
@@ -497,10 +483,10 @@ def getmyCategories(request):
 def getAllCategories(request):
     sortedList = []
     try:
-        categoryObject = list(Category.objects.filter(isBrand=False,parentId=None).values('id','slug','extPosId','parentId','name','description','showAtHome','icon'))
+        categoryObject = list(Category.objects.filter(isBrand=False,parentId=None).values('id','slug','parentId','name','description','showAtHome','icon'))
         for cat in categoryObject:
             sortedList = sortedList + [cat]
-            children = list(Category.objects.filter(isBrand=False,parentId=cat['id']).values('id','slug','extPosId','parentId','parentId__name','name','description','showAtHome','icon'))
+            children = list(Category.objects.filter(isBrand=False,parentId=cat['id']).values('id','slug','parentId','parentId__name','name','description','showAtHome','icon'))
             sortedList = sortedList+children
     except Exception as e:
         logger.error("Exception in getAllCategories: %s " %(str(e)))
@@ -517,7 +503,7 @@ class getAllPaginatedCategories(generics.ListCreateAPIView):
     serializer_class = CategorySerializerDepth
     pagination_class = CustomResultsSetPagination
     filter_backends = [filters.SearchFilter]
-    search_fields = ['name', 'extPosId']
+    search_fields = ['name']
 
     def get_queryset(self):
         categoryObject = Category.objects.filter(isBrand=False,status=1)
@@ -531,7 +517,7 @@ class getAllPaginatedCategories(generics.ListCreateAPIView):
 def getParentCategories(request):
     categoryObject = {}
     try:
-        categoryObject = list(Category.objects.filter(appliesOnline=1,parentId__isnull=True).values('id','extPosId','parentId','name').order_by('name'))
+        categoryObject = list(Category.objects.filter(appliesOnline=1,parentId__isnull=True).values('id','parentId','name').order_by('name'))
     except Exception as e:
         logger.error("Exception in getParentCategories: %s " %(str(e)))
     return JsonResponse(categoryObject, safe=False)
@@ -544,7 +530,7 @@ def getParentCategories(request):
 def getSubCategories(request):
     categoryObject = {}
     try:
-        categoryObject = list(Category.objects.filter(appliesOnline=1,parentId__isnull=False).values('id','extPosId','parentId','name').order_by('name'))
+        categoryObject = list(Category.objects.filter(appliesOnline=1,parentId__isnull=False).values('id','parentId','name').order_by('name'))
     except Exception as e:
         logger.error("Exception in getSubCategories: %s " %(str(e)))
     return JsonResponse(categoryObject, safe=False)
@@ -556,18 +542,9 @@ def getSubCategories(request):
 def getCategory(request):
     categoryObject = {}
     slug = request.data['slug']
-    category_POS_type=request.data['pos']
     
-    
-
     try:
-        if category_POS_type ==1:
-            categoryObject = list(Category.objects.filter(slug=slug, posType =Category.INTERNAL).values('id','extPosId','slug','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription','status').order_by('parentId'))
-    
-        elif category_POS_type ==2:
-            categoryObject = list(Category.objects.filter(slug=slug,posType=Category.EXTERNAL ).values('id','extPosId','slug','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription','status').order_by('extPosId','parentId'))
-        else:
-            categoryObject = list(Category.objects.filter(slug=slug,posType=Category.MIX ).values('id','extPosId','slug','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription','status').order_by('extPosId','parentId'))
+        categoryObject = list(Category.objects.filter(slug=slug).values('id','slug','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription','status').order_by('parentId'))
 
 
             
@@ -605,7 +582,7 @@ def getBrand(request):
     brandObject = {}
     slug = request.data['slug']
     try:
-        brandObject = list(Category.objects.filter(slug=slug).values('id','slug','extPosId','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription'))
+        brandObject = list(Category.objects.filter(slug=slug).values('id','slug','parentId','name','description','showAtHome','icon','metaUrl','metaTitle','metaDescription'))
     except Exception as e:
         logger.error("Exception in getBrand: %s " %(str(e)))
     return JsonResponse(brandObject, safe=False)
@@ -832,18 +809,13 @@ class getAllCustomers(generics.ListCreateAPIView):
 ############## Items ##########################
 
 def syncItems():
-    context = {'Key':'success'}
-    className = class_for_name(item_module_name, item_class_name)
-    syncObj = className()
-    # extPos = request.pos
-    extPos = 'Gofrugal_RPOS7'
-    syncObj.syncItems()
+    context = {'Key':'success', 'ErrorMsg': 'POS sync functionality has been removed'}
     return JsonResponse(context)
 
 def getAllItems(request):
     itemObject = {}
     try:
-        itemObject = list(Item.objects.filter(appliesOnline=1).values('id','sku','slug','extPosId','name','description','mrp','salePrice','stock','aliasCode','status','manufacturer', 'image').order_by('extPosId')[:100])
+        itemObject = list(Item.objects.filter(appliesOnline=1).values('id','sku','slug','name','description','mrp','salePrice','stock','aliasCode','status','manufacturer', 'image').order_by('id')[:100])
     except Exception as e:
             logger.error("Exception in getAllItems: %s " %(str(e)))
     return JsonResponse(itemObject, safe=False)
@@ -915,7 +887,7 @@ def getItem(request):
     itemObject = {}
     id = request.data['id']
     try:
-        itemObject = list(Item.objects.filter(id=int(id)).values('id','extPosId','slug','extPosId','sku','name','description','mrp','salePrice','stock','aliasCode','status','author','manufacturer', 'image', 'length', 'height', 'width','isNewArrival','newArrivalTill','metaUrl','metaTitle','metaDescription','itemInstructions','youtube_link','facebook_link','twitter_link','instagram_link','stock','stockCheckQty','isFeatured').order_by('extPosId'))
+        itemObject = list(Item.objects.filter(id=int(id)).values('id','slug','sku','name','description','mrp','salePrice','stock','aliasCode','status','author','manufacturer', 'image', 'length', 'height', 'width','isNewArrival','newArrivalTill','metaUrl','metaTitle','metaDescription','itemInstructions','youtube_link','facebook_link','twitter_link','instagram_link','stock','stockCheckQty','isFeatured').order_by('id'))
     except Exception as e:
             logger.error("Exception in getItem: %s " %(str(e)))
     return JsonResponse(itemObject, safe=False)
@@ -1963,7 +1935,7 @@ def getOrderSentToPosDetails(request):
         json_data = r.json()
         if 'result' in json_data:
             if(json_data['result']['status'] == "success"):
-                Order.objects.filter(orderNo=orderNo).update(status='PENDING',orderPKPos=json_data['result']['id'])
+                Order.objects.filter(orderNo=orderNo).update(status='PENDING')
                 result = {"ErrorCode": error_codes.SUCCESS, "ErrorMsg": error_codes.UPDATE_MSG}
                 context.update(result)
         else:
@@ -3033,7 +3005,7 @@ def SyncObjectStorageItemImages():
                     itemId = imageNameWithoutPrefix[1].split("_")
                     # print("itemId: ",itemId)
                     try:
-                        item = Item.objects.get(extPosId=int(itemId[0]))
+                        item = Item.objects.get(id=int(itemId[0]))
                         # print(item)
                         if item:
                             imageName = object['Key'].split(".")
@@ -3067,7 +3039,7 @@ def SyncObjectStorageItemImages():
                         imageName = imageKey[0].split(deletePrefix)
                         # print(imageName)
                         try:
-                            item = Item.objects.get(extPosId=int(imageName[1]))
+                            item = Item.objects.get(id=int(imageName[1]))
                             if item:
                                 item.image = defaultImage
                                 item.save()
@@ -3100,7 +3072,7 @@ def SyncObjectStorageItemImages():
                     itemId = imageNameWithoutPrefix[1].split("_")
                     print("itemId: ",itemId)
                     try:
-                        item = Item.objects.get(extPosId=int(itemId[0]))
+                        item = Item.objects.get(id=int(itemId[0]))
                         print(item)
                         if item:
                             imageName = object['Key'].split(".")
@@ -3132,7 +3104,7 @@ def SyncObjectStorageItemImages():
                     imageName = imageKey[0].split(itemPrefix)
                     # print(imageName)
                     try:
-                        item = Item.objects.get(extPosId=int(imageName[1]))
+                        item = Item.objects.get(id=int(imageName[1]))
                         if item:
                             item.image = object['Key']
                             item.save()
@@ -3606,7 +3578,6 @@ def addItem(request):
         isNewArrival = request.POST.get('isNewArrival')
         newArrivalTill = request.POST.get('newArrivalTill')
         isFeatured = request.POST.get('isFeatured')
-        extPosId=request.POST.get('extPosId')
         discount = request.POST.get('discount')
 
         item = Item(
@@ -3635,7 +3606,6 @@ def addItem(request):
             isNewArrival=isNewArrival,
             newArrivalTill=newArrivalTill,
             isFeatured=isFeatured,
-            extPosId=extPosId,
             discount=discount,
         )
         item.save()

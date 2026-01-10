@@ -70,9 +70,9 @@ Chitrali Products (Main Category)
 
 ## Notes
 
-- The script uses `extPosId` starting from 100000 to avoid conflicts
+- The script uses a product counter starting from 100000 to avoid conflicts
 - Products are linked to their respective categories via `CategoryItem` table
-- All products have manufacturer set to "Chitral Hive"
+- All products have manufacturer set to "Meerab's Wardrobe"
 - Prices include MRP, Sale Price, and Discount percentages
 
 ## Troubleshooting

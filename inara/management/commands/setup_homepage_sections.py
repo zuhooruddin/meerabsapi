@@ -469,7 +469,6 @@ class Command(BaseCommand):
                         appliesOnline=1,
                         showAtHome=0,  # Don't show subcategories on home page
                         priority=idx + 1,
-                        posType=Category.INTERNAL,
                         metaUrl=f"/categories/{subcat_slug}",
                         metaTitle=f"{subcat_name} - {category.name} | ChitralHive",
                         metaDescription=f"Premium {subcat_name} from {category.name}. Authentic Chitrali quality, natural ingredients.",

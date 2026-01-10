@@ -4,7 +4,6 @@ from email.policy import default
 from pyexpat import model
 from sqlite3 import Timestamp
 from statistics import mode
-# from turtle import pos
 from unicodedata import category
 from unittest.util import _MAX_LENGTH
 from django.db import models
@@ -43,7 +42,6 @@ class User(AbstractBaseUser,PermissionsMixin):
     role_choice = ((SUPER_ADMIN, "SUPER_ADMIN"), (ADMIN, "ADMIN"), (CUSTOMER, "CUSTOMER"))
 
     id               = models.BigAutoField(primary_key=True)
-    extPosId         = models.IntegerField(null=True)
     name             = models.CharField(max_length=100, null=True)
     password         = models.CharField(max_length=255, null=True)
     email            = models.CharField(max_length=100, unique=True, null=True)
@@ -154,15 +152,7 @@ class Category(models.Model):
     DELETED   = 3
     status_choice = ((ACTIVE, "ACTIVE"), (INACTIVE, "INACTIVE"),(DELETED, "DELETED"))
 
-    INTERNAL    = 1
-    EXTERNAL    = 2
-    MIX         = 3
-    pos_choice = ((EXTERNAL, "EXTERNAL"), (INTERNAL, "INTERNAL"),(MIX, "MIX"))
-
-
     id                          = models.BigAutoField(primary_key=True)
-    extPosId                    = models.IntegerField(null=True, default=0)
-    extPosParentId              = models.IntegerField(null=True)
     parentId                    = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True)
     name                        = models.CharField(max_length=100, null=False)
     slug                        = models.CharField(max_length=200, null=False, unique=True)
@@ -178,7 +168,6 @@ class Category(models.Model):
     isBrand                    = models.BooleanField(default=False)
     catName                     = models.CharField(max_length=100, null=True)
     priority                    = models.IntegerField(null=True)
-    posType                     = models.IntegerField(null=False, choices=pos_choice, default=INTERNAL)
     status                      = models.IntegerField(null=False, choices=status_choice, default=ACTIVE)
     history = CustomHistoricalRecords()
 
@@ -211,34 +200,6 @@ class Category(models.Model):
             raise
         return obj
 
-    # used in synchronization
-    def UpdateCategory(mapping,extPos):
-        obj = Category.objects.get(extPosId=extPos)
-        try:
-            for (field, value) in (mapping.items()):
-                setattr(obj, field,value)
-            obj.save()
-        except IntegrityError:
-            # print("Exception in AddCategory(model): " + str(e))
-            raise
-        return obj
-
-    def UpdateCategory1(categoryExtPosId, parentId, name, categoryDescription, appliesOnline, syncTs, lovSequence, catStatus):
-        result = None
-        try:
-            categoryObj = Category.objects.get(categoryExtPosId=categoryExtPosId)
-            categoryObj.parentId=parentId 
-            categoryObj.name=name 
-            categoryObj.description=categoryDescription 
-            categoryObj.appliesOnline=appliesOnline
-            categoryObj.syncTs=syncTs
-            categoryObj.lovSequence=lovSequence
-            categoryObj.status=catStatus
-            categoryObj.save()
-            result = categoryObj 
-        except Exception as e:
-            print("Exception in UpdateCategory(model): " + str(e))
-        return result
 
 ###############################  ITEM MODELS ################################
 
@@ -249,7 +210,6 @@ class Item(models.Model):
     status_choice = ((ACTIVE, "ACTIVE"), (INACTIVE, "INACTIVE"), (DELETED, "DELETED"))
 
     id                          = models.BigAutoField(primary_key=True)
-    extPosId                    = models.IntegerField(null=False)
     name                        = models.CharField(max_length=150, null=False)
     slug                        = models.CharField(max_length=150, unique=True)
     sku                         = models.CharField(max_length=100, unique=True,null=False)
@@ -298,18 +258,6 @@ class Item(models.Model):
     
     def AddItem(mapping):
         obj = Item()
-        try:
-            for (field, value) in (mapping.items()):
-                setattr(obj, field,value)
-            obj.save()
-        except IntegrityError:
-            # print("Exception in AddCategory(model): " + str(e))
-            raise
-
-        return obj
-    
-    def UpdateItem(mapping,extPosId):
-        obj = Item.objects.get(extPosId=extPosId)
         try:
             for (field, value) in (mapping.items()):
                 setattr(obj, field,value)
@@ -611,14 +559,13 @@ class Order(models.Model):
     deliveryType        = models.CharField(null=True, blank=True,max_length=30)
     timestamp           = models.DateTimeField(default=timezone.now, null=True)
     orderNotification   = models.IntegerField(default=0)
-    orderPKPos          = models.IntegerField(null=True)
     status              = models.CharField(null=False, choices=status_choice, default=UNCONFIRMED,max_length=100)
     history = CustomHistoricalRecords()
 
     class Meta:
         db_table = "order"
 
-    def AddOrder(name, email, phone, phone2, city, address, totalBill,deliveryFee,posStatus):
+    def AddOrder(name, email, phone, phone2, city, address, totalBill,deliveryFee):
         try:
             categoryObj = Category.objects.create(custName=name, custEmail=email, custPhone=phone, cust_phone2=phone2, custCity=city, shippingAddress=address, shippingCity=city, totalBill=totalBill, deliveryCharges=deliveryFee, discountedBill=totalBill, paymentMethod='COD')
         except Exception as e:

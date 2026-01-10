@@ -39,7 +39,6 @@ class Command(BaseCommand):
                 'appliesOnline': 1,
                 'showAtHome': 1,
                 'priority': 1,
-                'posType': Category.INTERNAL,
             }
         )
         categories['main'] = main_cat
@@ -107,7 +106,6 @@ class Command(BaseCommand):
                     'appliesOnline': 1,
                     'showAtHome': 1,
                     'priority': 2,
-                    'posType': Category.INTERNAL,
                 }
             )
             categories[subcat_data['slug']] = {
@@ -198,8 +196,8 @@ class Command(BaseCommand):
             },
         }
         
-        # Start extPosId from a high number to avoid conflicts
-        ext_pos_id = 100000
+        # Start from a high number to avoid conflicts
+        product_counter = 100000
         
         for category_slug, category_info in categories.items():
             if category_slug == 'main':
@@ -223,14 +221,14 @@ class Command(BaseCommand):
                     # Generate unique slug and SKU
                     base_slug = slugify(base_name)
                     weight_slug = weight.lower().replace(' ', '-')
-                    slug = f"{base_slug}-{weight_slug}-{ext_pos_id}"
+                    slug = f"{base_slug}-{weight_slug}-{product_counter}"
                     # Create category prefix for SKU
                     cat_prefix = category_slug.replace('chitrali-', '').replace('-', '')[:3].upper()
-                    sku = f"CHIT-{cat_prefix}-{ext_pos_id:06d}"
+                    sku = f"CHIT-{cat_prefix}-{product_counter:06d}"
                     
                     # Check if product already exists
                     if Item.objects.filter(slug=slug).exists() or Item.objects.filter(sku=sku).exists():
-                        ext_pos_id += 1
+                        product_counter += 1
                         continue
                     
                     # Generate prices
@@ -244,7 +242,6 @@ class Command(BaseCommand):
                     
                     # Create product
                     product = Item.objects.create(
-                        extPosId=ext_pos_id,
                         name=product_name,
                         slug=slug,
                         sku=sku,
@@ -259,8 +256,8 @@ class Command(BaseCommand):
                         status=Item.ACTIVE,
                         isNewArrival=random.choice([0, 1]),
                         isFeatured=random.choice([0, 1]) if i % 10 == 0 else 0,
-                        manufacturer='Chitral Hive',
-                        metaTitle=f"{product_name} - Chitral Hive",
+                        manufacturer='Meerab\'s Wardrobe',
+                        metaTitle=f"{product_name} - Meerab's Wardrobe",
                         metaDescription=description[:150],
                         timestamp=timezone.now(),
                     )
@@ -274,14 +271,14 @@ class Command(BaseCommand):
                     )
                     
                     products_created += 1
-                    ext_pos_id += 1
+                    product_counter += 1
                     
                     if products_created % 100 == 0:
                         self.stdout.write(f'Created {products_created} products...')
                         
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f'Error creating product: {str(e)}'))
-                    ext_pos_id += 1
+                    product_counter += 1
                     continue
         
         return products_created

@@ -382,10 +382,5 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': True,
         },
-        'inara.core.middlewares.externalPOS.Gofrugal_RPOS7.item': {
-            'handlers': ['itemSync'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
     },
 }
