@@ -35,16 +35,9 @@ celeryLogger.setLevel(10)
 celeryLogger.addHandler(celeryLogHandler)
 celeryLogger.info('Logging enabled Tasks')
 
-# Import Celery app from celery.py - import at the end to avoid circular dependencies
-# We'll import it after all other setup is done
-try:
-    from .celery import app
-except (ImportError, AttributeError):
-    # Fallback: create a minimal app if celery.py import fails
-    # This should not happen in normal operation
-    from celery import Celery
-    app = Celery('ecommerce_backend')
-    app.config_from_object('ecommerce_backend.settings')
+# Import Celery app from celery.py
+# This import happens after django.setup() to ensure proper initialization
+from .celery import app
 
 
 def checkIfTaskCancelled(msg):
