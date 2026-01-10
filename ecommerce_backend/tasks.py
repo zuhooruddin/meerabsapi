@@ -17,9 +17,8 @@ import random
 # from celery.schedules import crontab
 # from inara import views
 # from inara.models import *
-from celery.result import AsyncResult
+# Celery imports are done lazily to avoid import errors during Django startup
 import datetime
-from celery.exceptions import Ignore
 # from celery.task.control import revoke
 
 import environ
@@ -41,6 +40,8 @@ from .celery import app
 
 
 def checkIfTaskCancelled(msg):
+    # Import Ignore only when needed
+    from celery.exceptions import Ignore
     if task_canceled():
         task_stopped()
         if(TaskProgress.objects.filter(syncType="ITEM_SYNC",status="PROGRESS").exists()):
@@ -77,6 +78,7 @@ class RPOS7Category(object):
 
 @app.task(name="sync_categories_click")
 def sync_categories_click():
+    from celery.exceptions import Ignore
     context = {}
     errorList = []
     r=requests.get("https://722157.true-order.com/WebReporter/api/v1/categories", headers={"X-Auth-Token":env('POS_AUTH_TOKEN')})
@@ -217,6 +219,7 @@ class RPOS7CategoryItem(object):
 
 @app.task(name="sync_items_click")
 def sync_items_click():
+        from celery.exceptions import Ignore
         context = {}
         errorList = []
         r1=requests.get("https://722157.true-order.com/WebReporter/api/v1/items",timeout=5, headers={"X-Auth-Token":env('POS_AUTH_TOKEN')})
@@ -341,7 +344,8 @@ def sync_items_click():
 
 
 def get_task_status(task_id):
-    # Import app here to avoid circular imports during Django startup
+    # Import AsyncResult and app here to avoid import errors during Django startup
+    from celery.result import AsyncResult
     try:
         from .celery import app as celery_app
     except ImportError:
