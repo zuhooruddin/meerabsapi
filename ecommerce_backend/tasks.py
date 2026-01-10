@@ -3,7 +3,6 @@ import os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ecommerce_backend.settings')
 import django
 django.setup()
-from celery import shared_task
 # import logging
 import logging,os
 from . import settings
@@ -35,6 +34,17 @@ celeryLogger = logging.getLogger(__name__)
 celeryLogger.setLevel(10)
 celeryLogger.addHandler(celeryLogHandler)
 celeryLogger.info('Logging enabled Tasks')
+
+# Import Celery app from celery.py - import at the end to avoid circular dependencies
+# We'll import it after all other setup is done
+try:
+    from .celery import app
+except (ImportError, AttributeError):
+    # Fallback: create a minimal app if celery.py import fails
+    # This should not happen in normal operation
+    from celery import Celery
+    app = Celery('ecommerce_backend')
+    app.config_from_object('ecommerce_backend.settings')
 
 
 def checkIfTaskCancelled(msg):
@@ -72,7 +82,7 @@ class RPOS7Category(object):
         self.lovSequence    = None
         self.status         = None
 
-@shared_task(name="sync_categories_click")
+@app.task(name="sync_categories_click")
 def sync_categories_click():
     context = {}
     errorList = []
@@ -212,7 +222,7 @@ class RPOS7CategoryItem(object):
     itemId           = None
     level            = None
 
-@shared_task(name="sync_items_click")
+@app.task(name="sync_items_click")
 def sync_items_click():
         context = {}
         errorList = []
