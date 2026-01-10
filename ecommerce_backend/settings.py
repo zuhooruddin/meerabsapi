@@ -261,6 +261,7 @@ USE_TZ = True
 # MEDIA_URL = '/media/'
 
 
+
 STATIC_URL = '/api/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 MEDIA_URL = 'api/media/'
