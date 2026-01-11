@@ -682,11 +682,12 @@ def get_all_paginated_items(request):
         paginator = Paginator(itemObject, page_size)
         page_obj = paginator.get_page(page)
 
-        # Use variant-aware serializer if requested (for clothing products)
-        if use_variants:
+        # Use variant-aware serializer for clothing products (default for all products now)
+        try:
             from inara.serializers import ItemWithVariantsSerializer
             serializer = ItemWithVariantsSerializer(page_obj, many=True)
-        else:
+        except:
+            # Fallback to regular serializer if variant serializer not available
             serializer = ItemSerializer(page_obj, many=True)
         
         data = {
@@ -2063,7 +2064,34 @@ def addOrder(request):
                 # print('In Cart List')
                 totalItemQty = cart['qty'] + totalItemQty
                 itemTotalPrice = cart['qty'] * cart['price']
-                orderDescObj = OrderDescription.objects.create(item_type=1, itemSku=cart['sku'], itemName=cart['name'], itemUnit='each', itemMinQty=1,mrp=cart['mrp'],salePrice=cart['salePrice'],itemIndPrice=cart['price'], itemTotalPrice=itemTotalPrice, itemQty=cart['qty'], isStockManaged=True,order=orderObj)
+                
+                # Get variant if variant_id is provided
+                variant = None
+                if cart.get('variant_id'):
+                    try:
+                        from inara.models import ProductVariant
+                        variant = ProductVariant.objects.get(id=cart['variant_id'])
+                    except ProductVariant.DoesNotExist:
+                        variant = None
+                
+                orderDescObj = OrderDescription.objects.create(
+                    item_type=1, 
+                    itemSku=cart.get('variant_sku') or cart['sku'], 
+                    itemName=cart['name'], 
+                    itemUnit='each', 
+                    itemMinQty=1,
+                    mrp=cart['mrp'],
+                    salePrice=cart['salePrice'],
+                    itemIndPrice=cart['price'], 
+                    itemTotalPrice=itemTotalPrice, 
+                    itemQty=cart['qty'], 
+                    isStockManaged=True,
+                    order=orderObj,
+                    # Variant information for clothing products
+                    variant=variant,
+                    selected_color=cart.get('selected_color'),
+                    selected_size=cart.get('selected_size'),
+                )
 
             Order.objects.filter(id=orderObj.pk).update(totalItems=totalItemQty,orderNo=formatedOrderNo)
             OrderObject = Order.objects.get(id=orderObj.id)
@@ -3943,10 +3971,17 @@ def addItem(request):
         metaUrl = request.POST.get('metaUrl')
         metaTitle = request.POST.get('metaTitle')
         metaDescription = request.POST.get('metaDescription')
-        isNewArrival = request.POST.get('isNewArrival')
+        isNewArrival = request.POST.get('isNewArrival', 0)
         newArrivalTill = request.POST.get('newArrivalTill')
-        isFeatured = request.POST.get('isFeatured')
-        discount = request.POST.get('discount')
+        isFeatured = request.POST.get('isFeatured', 0)
+        discount = request.POST.get('discount', 0)
+        
+        # Clothing-specific fields
+        brand = request.POST.get('brand', '')
+        product_category = request.POST.get('product_category', '')
+        base_price = request.POST.get('base_price') or saleprice
+        discount_price = request.POST.get('discount_price', '')
+        is_active = request.POST.get('is_active', 'true').lower() == 'true'
 
         item = Item(
             name=name,
@@ -3975,6 +4010,12 @@ def addItem(request):
             newArrivalTill=newArrivalTill,
             isFeatured=isFeatured,
             discount=discount,
+            # Clothing-specific fields
+            brand=brand if brand else None,
+            product_category=product_category if product_category else None,
+            base_price=int(base_price) if base_price else None,
+            discount_price=int(discount_price) if discount_price else None,
+            is_active=is_active,
         )
         item.save()
 
