@@ -94,11 +94,11 @@ from django.db.models.functions import Concat
 logger = logging.getLogger(__name__)
 env = environ.Env()
 environ.Env.read_env()
-category_POS_type = Category.INTERNAL
-product_POS_type= Category.INTERNAL
-category_image_type =Category.INTERNAL
-product_image_type= Category.INTERNAL
-order_POS_type=Category.INTERNAL
+# category_POS_type = Category.INTERNAL
+# product_POS_type= Category.INTERNAL
+# category_image_type =Category.INTERNAL
+# product_image_type= Category.INTERNAL
+# order_POS_type=Category.INTERNAL
 
 
 from django.contrib.auth.decorators import user_passes_test
@@ -652,6 +652,7 @@ def get_all_paginated_items(request):
     page = request.GET.get('page', 1)
     page_size = request.GET.get('pageSize', 9)
     sort_option = request.GET.get('sort', '')  # Get the sort option
+    use_variants = request.GET.get('use_variants', 'false').lower() == 'true'  # Flag for variant support
 
     try:
         # categoryObject = Category.objects.get(slug=slug)
@@ -681,7 +682,13 @@ def get_all_paginated_items(request):
         paginator = Paginator(itemObject, page_size)
         page_obj = paginator.get_page(page)
 
-        serializer = ItemSerializer(page_obj, many=True)
+        # Use variant-aware serializer if requested (for clothing products)
+        if use_variants:
+            from inara.serializers import ItemWithVariantsSerializer
+            serializer = ItemWithVariantsSerializer(page_obj, many=True)
+        else:
+            serializer = ItemSerializer(page_obj, many=True)
+        
         data = {
             'results': serializer.data,
             'count': paginator.count
@@ -974,6 +981,367 @@ def getItemDetail(request):
             print(e)
             logger.error("Exception in getSearchItem: %s " %(str(e)))
     return JsonResponse(returnList, safe=False)
+
+
+#################### NEW CLOTHING E-COMMERCE API ENDPOINTS ####################
+
+@api_view(['GET'])
+@permission_classes((AllowAny,))
+@csrf_exempt
+def getItemDetailWithVariants(request):
+    """
+    Enhanced product detail API that includes variant information (color, size, stock).
+    Used for clothing products with variants support.
+    """
+    returnData = {}
+    slug = request.GET.get('slug', '')
+    
+    try:
+        itemObject = Item.objects.get(slug=slug, status=Item.ACTIVE)
+        
+        # Use ItemWithVariantsSerializer to get product with variants
+        from inara.serializers import ItemWithVariantsSerializer
+        serializer = ItemWithVariantsSerializer(itemObject)
+        productData = serializer.data
+        
+        # Get gallery images
+        galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk, status=ItemGallery.ACTIVE)
+        galleryImages = [img.image.url for img in galleryObject]
+        
+        # Get categories
+        categoryList = list(CategoryItem.objects.filter(
+            itemId=itemObject, 
+            status=CategoryItem.ACTIVE
+        ).values_list("categoryId", flat=True))
+        categoriesObj = Category.objects.filter(id__in=categoryList).values('id', 'name', 'slug')
+        
+        returnData = {
+            'product': productData,
+            'gallery': galleryImages,
+            'categories': list(categoriesObj),
+            'success': True
+        }
+        
+    except Item.DoesNotExist:
+        returnData = {
+            'success': False,
+            'error': 'Product not found'
+        }
+    except Exception as e:
+        logger.error("Exception in getItemDetailWithVariants: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['GET'])
+@permission_classes((AllowAny,))
+@csrf_exempt
+def getProductVariants(request):
+    """
+    Get all variants for a specific product.
+    Useful for dynamic variant selection on product detail page.
+    """
+    returnData = {}
+    item_id = request.GET.get('item_id', '')
+    color = request.GET.get('color', None)
+    size = request.GET.get('size', None)
+    
+    try:
+        from inara.serializers import ProductVariantSerializer
+        
+        # Base query for active variants
+        variants = ProductVariant.objects.filter(
+            item_id=item_id,
+            status=ProductVariant.ACTIVE
+        )
+        
+        # Filter by color if provided
+        if color:
+            variants = variants.filter(color=color)
+        
+        # Filter by size if provided
+        if size:
+            variants = variants.filter(size=size)
+        
+        serializer = ProductVariantSerializer(variants, many=True)
+        
+        returnData = {
+            'variants': serializer.data,
+            'success': True
+        }
+        
+    except Exception as e:
+        logger.error("Exception in getProductVariants: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['POST'])
+@permission_classes((AllowAny,))
+@csrf_exempt
+def checkVariantStock(request):
+    """
+    Check stock availability for a specific variant (color + size combination).
+    Used before adding to cart to validate stock.
+    """
+    returnData = {}
+    item_id = request.data.get('item_id')
+    color = request.data.get('color')
+    size = request.data.get('size')
+    requested_qty = int(request.data.get('quantity', 1))
+    
+    try:
+        variant = ProductVariant.objects.get(
+            item_id=item_id,
+            color=color,
+            size=size,
+            status=ProductVariant.ACTIVE
+        )
+        
+        available = variant.stock_quantity >= requested_qty
+        
+        returnData = {
+            'available': available,
+            'stock_quantity': variant.stock_quantity,
+            'variant_id': variant.id,
+            'variant_sku': variant.sku,
+            'price': variant.get_price(),
+            'success': True
+        }
+        
+    except ProductVariant.DoesNotExist:
+        returnData = {
+            'success': False,
+            'available': False,
+            'error': 'Variant not found or out of stock'
+        }
+    except Exception as e:
+        logger.error("Exception in checkVariantStock: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['GET'])
+@permission_classes((AllowAny,))
+@csrf_exempt
+def getClothingCategories(request):
+    """
+    Get clothing-specific categories (Men, Women, Kids, etc.)
+    """
+    returnData = []
+    
+    try:
+        # Get all active categories
+        categories = Category.objects.filter(
+            status=Category.ACTIVE,
+            showAtHome=1
+        ).values('id', 'name', 'slug', 'description', 'icon')
+        
+        returnData = list(categories)
+        
+    except Exception as e:
+        logger.error("Exception in getClothingCategories: %s " %(str(e)))
+    
+    return JsonResponse(returnData, safe=False)
+
+
+#################### END NEW CLOTHING API ENDPOINTS ####################
+
+#################### VARIANT MANAGEMENT API ENDPOINTS (Admin) ####################
+
+@api_view(['GET'])
+@permission_classes((IsAuthenticated,))
+@is_admin
+@csrf_exempt
+def getProductVariantsAdmin(request):
+    """
+    Get all variants for a product (Admin endpoint).
+    """
+    returnData = {}
+    item_id = request.GET.get('item_id', '')
+    
+    try:
+        from inara.serializers import ProductVariantSerializer
+        
+        variants = ProductVariant.objects.filter(
+            item_id=item_id
+        ).order_by('color', 'size')
+        
+        serializer = ProductVariantSerializer(variants, many=True)
+        
+        returnData = {
+            'variants': serializer.data,
+            'success': True
+        }
+        
+    except Exception as e:
+        logger.error("Exception in getProductVariantsAdmin: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['POST'])
+@permission_classes((IsAuthenticated,))
+@is_admin
+@csrf_exempt
+def addProductVariant(request):
+    """
+    Create a new product variant (Admin endpoint).
+    """
+    returnData = {}
+    
+    try:
+        from inara.serializers import ProductVariantSerializer
+        
+        data = request.data
+        variant = ProductVariant.objects.create(
+            item_id=data.get('item'),
+            color=data.get('color'),
+            color_hex=data.get('color_hex', ''),
+            size=data.get('size'),
+            sku=data.get('sku'),
+            stock_quantity=int(data.get('stock_quantity', 0)),
+            variant_price=int(data.get('variant_price')) if data.get('variant_price') else None,
+            status=int(data.get('status', ProductVariant.ACTIVE))
+        )
+        
+        serializer = ProductVariantSerializer(variant)
+        
+        returnData = {
+            'variant': serializer.data,
+            'success': True,
+            'message': 'Variant created successfully'
+        }
+        
+    except IntegrityError as e:
+        logger.error("IntegrityError in addProductVariant: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': 'Variant with this color and size already exists for this product'
+        }
+    except Exception as e:
+        logger.error("Exception in addProductVariant: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['PATCH', 'PUT'])
+@permission_classes((IsAuthenticated,))
+@is_admin
+@csrf_exempt
+def updateProductVariant(request, pk):
+    """
+    Update an existing product variant (Admin endpoint).
+    """
+    returnData = {}
+    
+    try:
+        from inara.serializers import ProductVariantSerializer
+        
+        variant = ProductVariant.objects.get(id=pk)
+        data = request.data
+        
+        if 'color' in data:
+            variant.color = data.get('color')
+        if 'color_hex' in data:
+            variant.color_hex = data.get('color_hex', '')
+        if 'size' in data:
+            variant.size = data.get('size')
+        if 'sku' in data:
+            variant.sku = data.get('sku')
+        if 'stock_quantity' in data:
+            variant.stock_quantity = int(data.get('stock_quantity', 0))
+        if 'variant_price' in data:
+            variant.variant_price = int(data.get('variant_price')) if data.get('variant_price') else None
+        if 'status' in data:
+            variant.status = int(data.get('status', ProductVariant.ACTIVE))
+        
+        variant.save()
+        
+        serializer = ProductVariantSerializer(variant)
+        
+        returnData = {
+            'variant': serializer.data,
+            'success': True,
+            'message': 'Variant updated successfully'
+        }
+        
+    except ProductVariant.DoesNotExist:
+        returnData = {
+            'success': False,
+            'error': 'Variant not found'
+        }
+    except IntegrityError as e:
+        logger.error("IntegrityError in updateProductVariant: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': 'Variant with this color and size already exists for this product'
+        }
+    except Exception as e:
+        logger.error("Exception in updateProductVariant: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+@api_view(['DELETE'])
+@permission_classes((IsAuthenticated,))
+@is_admin
+@csrf_exempt
+def deleteProductVariant(request, pk):
+    """
+    Delete a product variant (Admin endpoint).
+    """
+    returnData = {}
+    
+    try:
+        variant = ProductVariant.objects.get(id=pk)
+        variant.delete()
+        
+        returnData = {
+            'success': True,
+            'message': 'Variant deleted successfully'
+        }
+        
+    except ProductVariant.DoesNotExist:
+        returnData = {
+            'success': False,
+            'error': 'Variant not found'
+        }
+    except Exception as e:
+        logger.error("Exception in deleteProductVariant: %s " %(str(e)))
+        returnData = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return JsonResponse(returnData, safe=False)
+
+
+#################### END VARIANT MANAGEMENT API ENDPOINTS ####################
 
 
 # @method_decorator(api_view(["PUT", "PATCH"]), name='dispatch')

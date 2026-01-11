@@ -141,7 +141,7 @@ def generate_pakistan_seo_keywords(product_name, category_name=None):
         "online shopping Pakistan",
         "Pakistan delivery",
         "free shipping Pakistan",
-        "Chitral Hive Pakistan"
+        "Meerab's Wardrobe Pakistan"
     ])
     
     return ", ".join(keywords)

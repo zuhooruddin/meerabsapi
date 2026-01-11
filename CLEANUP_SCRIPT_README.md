@@ -1,6 +1,6 @@
 # Unused Media Files Cleanup Scripts
 
-This directory contains scripts to identify and remove unused images and files from the Chitral Hive Django project.
+This directory contains scripts to identify and remove unused images and files from the Meerab's Wardrobe Django project.
 
 ## Available Scripts
 

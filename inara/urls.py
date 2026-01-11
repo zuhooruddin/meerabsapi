@@ -107,6 +107,18 @@ urlpatterns = [
     ########## Sliders API #############
     path('getSlidersFromCloud', views.getSlidersFromCloud, name = 'getSlidersFromCloud'), # used
 
+    ########## NEW CLOTHING E-COMMERCE API ENDPOINTS #############
+    path('getItemDetailWithVariants', views.getItemDetailWithVariants, name = 'getItemDetailWithVariants'),  # Enhanced product detail with variants
+    path('getProductVariants', views.getProductVariants, name = 'getProductVariants'),  # Get variants for a product
+    path('checkVariantStock', views.checkVariantStock, name = 'checkVariantStock'),  # Check variant stock availability
+    path('getClothingCategories', views.getClothingCategories, name = 'getClothingCategories'),  # Get clothing categories
+    
+    ########## VARIANT MANAGEMENT API ENDPOINTS (Admin) #############
+    path('getProductVariantsAdmin', views.getProductVariantsAdmin, name = 'getProductVariantsAdmin'),  # Get variants (Admin)
+    path('addProductVariant', views.addProductVariant, name = 'addProductVariant'),  # Create variant (Admin)
+    path('updateProductVariant/<int:pk>', views.updateProductVariant, name = 'updateProductVariant'),  # Update variant (Admin)
+    path('deleteProductVariant/<int:pk>', views.deleteProductVariant, name = 'deleteProductVariant'),  # Delete variant (Admin)
+
 
 
     ##### Items #####

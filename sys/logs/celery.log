@@ -1,1 +1,5 @@
-[2026-01-03 21:30:29,211] INFO [ecommerce_backend.tasks.<module>:38] Logging enabled Tasks
+[2026-01-11 11:47:00,958] INFO [ecommerce_backend.tasks.<module>:35] Logging enabled Tasks
+2026-01-11 11:49:46,542 INFO: ecommerce_backend.tasks( tasks.<module>():35 )- Logging enabled Tasks
+[2026-01-11 11:49:46,542] INFO [ecommerce_backend.tasks.<module>:35] Logging enabled Tasks
+2026-01-11 11:51:24,005 INFO: ecommerce_backend.tasks( tasks.<module>():35 )- Logging enabled Tasks
+[2026-01-11 11:51:24,005] INFO [ecommerce_backend.tasks.<module>:35] Logging enabled Tasks

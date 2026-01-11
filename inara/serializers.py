@@ -11,6 +11,9 @@ from allauth.account import app_settings
 from dj_rest_auth.serializers import PasswordResetSerializer
 import os
 
+# Import the ProductVariant model explicitly for use in serializers
+from inara.models import ProductVariant
+
 UserModel = get_user_model()
 
 
@@ -202,6 +205,103 @@ class ItemSerializer(serializers.ModelSerializer):
             representation['image'] = instance.image.url
         return representation
 
+
+############################### PRODUCT VARIANT SERIALIZERS #############################
+class ProductVariantSerializer(serializers.ModelSerializer):
+    """Serializer for ProductVariant model"""
+    item_name = serializers.CharField(source='item.name', read_only=True)
+    actual_price = serializers.SerializerMethodField()
+    in_stock = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProductVariant
+        fields = [
+            'id', 'item', 'item_name', 'color', 'color_hex', 'size', 
+            'sku', 'stock_quantity', 'variant_price', 'actual_price',
+            'in_stock', 'status', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+    
+    def get_actual_price(self, obj):
+        """Return the effective price for this variant"""
+        return obj.get_price()
+    
+    def get_in_stock(self, obj):
+        """Return whether the variant is in stock"""
+        return obj.is_in_stock()
+
+
+class ItemWithVariantsSerializer(serializers.ModelSerializer):
+    """
+    Enhanced Item serializer that includes variants information
+    Used for product listing and detail pages
+    """
+    variants = ProductVariantSerializer(many=True, read_only=True)
+    available_colors = serializers.SerializerMethodField()
+    available_sizes = serializers.SerializerMethodField()
+    price_range = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Item
+        fields = [
+            'id', 'name', 'slug', 'sku', 'image', 'description', 
+            'brand', 'product_category', 'base_price', 'discount_price',
+            'is_active', 'status', 'mrp', 'salePrice', 'discount',
+            'metaUrl', 'metaTitle', 'metaDescription', 'isFeatured',
+            'isNewArrival', 'variants', 'available_colors', 'available_sizes',
+            'price_range'
+        ]
+    
+    def get_available_colors(self, obj):
+        """Get list of unique colors available for this product"""
+        variants = obj.variants.filter(status=ProductVariant.ACTIVE, stock_quantity__gt=0)
+        colors = variants.values('color', 'color_hex').distinct()
+        return list(colors)
+    
+    def get_available_sizes(self, obj):
+        """Get list of unique sizes available for this product"""
+        variants = obj.variants.filter(status=ProductVariant.ACTIVE, stock_quantity__gt=0)
+        sizes = variants.values_list('size', flat=True).distinct().order_by('size')
+        return list(sizes)
+    
+    def get_price_range(self, obj):
+        """Get minimum and maximum price across all variants"""
+        variants = obj.variants.filter(status=ProductVariant.ACTIVE)
+        if not variants.exists():
+            return {
+                'min_price': obj.base_price or obj.salePrice,
+                'max_price': obj.base_price or obj.salePrice
+            }
+        
+        prices = []
+        for variant in variants:
+            prices.append(variant.get_price())
+        
+        return {
+            'min_price': min(prices) if prices else obj.base_price or obj.salePrice,
+            'max_price': max(prices) if prices else obj.base_price or obj.salePrice
+        }
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.image:
+            representation['image'] = instance.image.url
+        return representation
+
+
+class OrderDescriptionSerializer(serializers.ModelSerializer):
+    """Enhanced OrderDescription serializer with variant support"""
+    variant_details = ProductVariantSerializer(source='variant', read_only=True)
+    
+    class Meta:
+        model = OrderDescription
+        fields = [
+            'id', 'order', 'item_type', 'itemSku', 'itemName', 'itemUnit',
+            'itemMinQty', 'mrp', 'salePrice', 'itemIndPrice', 'itemTotalPrice',
+            'itemQty', 'variant', 'variant_details', 'selected_color', 'selected_size',
+            'isStockManaged', 'isDeleted'
+        ]
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -213,11 +313,6 @@ class UserSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = '__all__'
-        # depth = 2
-class OrderDescriptionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OrderDescription
         fields = '__all__'
         # depth = 2
 

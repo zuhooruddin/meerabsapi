@@ -76,3 +76,14 @@ def get_task_status(task_id):
     return {'status': status, 'progress': progress}
 
 
+def sync_categories_click(*args, **kwargs):
+    """Placeholder function for category sync - to be implemented"""
+    celeryLogger.info('sync_categories_click called')
+    pass
+
+
+def sync_items_click(*args, **kwargs):
+    """Placeholder function for items sync - to be implemented"""
+    celeryLogger.info('sync_items_click called')
+    pass
+

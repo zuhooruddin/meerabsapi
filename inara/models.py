@@ -209,6 +209,13 @@ class Item(models.Model):
     DELETED   = 3
     status_choice = ((ACTIVE, "ACTIVE"), (INACTIVE, "INACTIVE"), (DELETED, "DELETED"))
 
+    # Clothing category choices
+    MEN = 'MEN'
+    WOMEN = 'WOMEN'
+    KIDS = 'KIDS'
+    UNISEX = 'UNISEX'
+    category_choice = ((MEN, 'Men'), (WOMEN, 'Women'), (KIDS, 'Kids'), (UNISEX, 'Unisex'))
+
     id                          = models.BigAutoField(primary_key=True)
     name                        = models.CharField(max_length=150, null=False)
     slug                        = models.CharField(max_length=150, unique=True)
@@ -216,6 +223,15 @@ class Item(models.Model):
     image                       = models.ImageField(upload_to='item_image', default='idris/asset/default-item-image.jpg', null=True)
     description                 = models.CharField(max_length=2000, null=True)
     appliesOnline               = models.IntegerField(null=False, default=0)
+    
+    # Clothing-specific fields
+    brand                       = models.CharField(max_length=150, null=True, blank=True)
+    product_category            = models.CharField(max_length=20, choices=category_choice, null=True, blank=True)
+    base_price                  = models.IntegerField(null=True)
+    discount_price              = models.IntegerField(null=True, blank=True)
+    is_active                   = models.BooleanField(default=True)
+    
+    # Legacy fields (maintained for backward compatibility)
     weightGrams                 = models.CharField(max_length=150, null=True)
     manufacturer                = models.CharField(max_length=150, null=True)
     # author                      = models.CharField(max_length=50, null=True)
@@ -299,6 +315,70 @@ class ItemTags(models.Model):
 
     class Meta:
         db_table = "item_tag"
+
+
+############################### PRODUCT VARIANT MODEL (for clothing) #############################
+class ProductVariant(models.Model):
+    """
+    Product Variant model for clothing: color, size, SKU, stock, and pricing.
+    Each Item can have multiple variants with different color/size combinations.
+    """
+    ACTIVE      = 1
+    INACTIVE    = 2
+    DELETED     = 3
+    status_choice = ((ACTIVE, "ACTIVE"), (INACTIVE, "INACTIVE"), (DELETED, "DELETED"))
+
+    SIZE_XS = 'XS'
+    SIZE_S = 'S'
+    SIZE_M = 'M'
+    SIZE_L = 'L'
+    SIZE_XL = 'XL'
+    SIZE_XXL = 'XXL'
+    SIZE_XXXL = 'XXXL'
+    size_choice = (
+        (SIZE_XS, 'Extra Small'),
+        (SIZE_S, 'Small'),
+        (SIZE_M, 'Medium'),
+        (SIZE_L, 'Large'),
+        (SIZE_XL, 'Extra Large'),
+        (SIZE_XXL, 'Double Extra Large'),
+        (SIZE_XXXL, 'Triple Extra Large'),
+    )
+
+    id                  = models.BigAutoField(primary_key=True)
+    item                = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='variants', null=False)
+    color               = models.CharField(max_length=50, null=False)
+    color_hex           = models.CharField(max_length=7, null=True, blank=True)
+    size                = models.CharField(max_length=10, choices=size_choice, null=False)
+    sku                 = models.CharField(max_length=100, unique=True, null=False)
+    stock_quantity      = models.IntegerField(default=0, null=False)
+    variant_price       = models.IntegerField(null=True, blank=True)
+    status              = models.IntegerField(null=False, choices=status_choice, default=ACTIVE)
+    created_at          = models.DateTimeField(auto_now_add=True)
+    updated_at          = models.DateTimeField(auto_now=True)
+    history = CustomHistoricalRecords()
+
+    class Meta:
+        db_table = "product_variant"
+        unique_together = [['item', 'color', 'size']]
+        indexes = [
+            models.Index(fields=['item', 'status']),
+            models.Index(fields=['sku']),
+        ]
+
+    def __str__(self):
+        return f"{self.item.name} - {self.color} - {self.size}"
+    
+    def get_price(self):
+        """Returns variant price if set, otherwise item's base_price or salePrice"""
+        if self.variant_price:
+            return self.variant_price
+        return self.item.base_price or self.item.salePrice
+    
+    def is_in_stock(self):
+        """Check if variant is in stock"""
+        return self.stock_quantity > 0
+
 
 # class ItemSeo(models.Model):
 #     ACTIVE          = 1
@@ -591,6 +671,12 @@ class OrderDescription(models.Model):
     itemIndPrice        = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     itemTotalPrice      = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     itemQty             = models.IntegerField(null=True, blank=True)
+    
+    # Clothing variant fields
+    variant             = models.ForeignKey('ProductVariant', on_delete=models.PROTECT, related_name='order_items', null=True, blank=True)
+    selected_color      = models.CharField(max_length=50, null=True, blank=True)
+    selected_size       = models.CharField(max_length=10, null=True, blank=True)
+    
     isStockManaged      = models.BooleanField(default=False)
     isDeleted           = models.BooleanField(default=False)
     history = CustomHistoricalRecords()
