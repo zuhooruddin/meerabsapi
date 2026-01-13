@@ -592,8 +592,16 @@ def getBrand(request):
 @permission_classes((AllowAny,))
 # @csrf_exempt
 class getSearchCategory(generics.ListCreateAPIView):
-    serializer_class = ItemSerializer
+    serializer_class = ItemSerializer  # Default, but we'll override in get_serializer_class
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        """Use ItemWithVariantsSerializer to include variant information"""
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            return ItemWithVariantsSerializer
+        except:
+            return ItemSerializer
 
     def get_queryset(self):
         itemObject={}
@@ -604,7 +612,8 @@ class getSearchCategory(generics.ListCreateAPIView):
             categoryItemObject = CategoryItem.objects.filter(categoryId=categoryObject.pk).values("itemId").distinct("itemId")
             for i in categoryItemObject:
                 itemList.append(i['itemId'])
-            itemObject = Item.objects.filter(id__in=itemList,status=Item.ACTIVE,appliesOnline=1).order_by("-newArrivalTill","-isFeatured","-stock")
+            # Optimize query by prefetching variants to avoid N+1 queries
+            itemObject = Item.objects.filter(id__in=itemList,status=Item.ACTIVE,appliesOnline=1).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
         except Exception as e:
             logger.error("Exception in getSearchCategory: %s " %(str(e)))
         return itemObject
@@ -2454,8 +2463,18 @@ def getFeaturedItems(request):
         elif type == 'featured':
             filter_kwargs['isFeatured'] = True
         
-        featureObject = Item.objects.filter(**filter_kwargs).order_by("-newArrivalTill", "-isFeatured", "-stock")[:20]
-        serialized_data = ItemSerializer(featureObject, many=True).data
+        # Optimize query by prefetching variants to avoid N+1 queries
+        featureObject = Item.objects.filter(**filter_kwargs).prefetch_related('variants').order_by("-newArrivalTill", "-isFeatured", "-stock")[:20]
+        
+        # Use variant-aware serializer to include variants, available_colors, etc.
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            serialized_data = ItemWithVariantsSerializer(featureObject, many=True).data
+        except Exception as e:
+            # Log the error and fallback to regular serializer
+            logger.error("Error using ItemWithVariantsSerializer in getFeaturedItems: %s" % (str(e)))
+            print("Error using ItemWithVariantsSerializer: ", e)
+            serialized_data = ItemSerializer(featureObject, many=True).data
     except Exception as e:
         logger.error("Exception in getFeaturedItems: %s" % str(e))
         return JsonResponse({'error': 'An error occurred'}, status=500)
@@ -2509,8 +2528,18 @@ def getItemSearchCategory(request):
         categoryObject = Category.objects.get(slug=slug)    
         categoryItemList = list(CategoryItem.objects.filter(categoryId=categoryObject).values_list("itemId",flat=True))
         
-        items = Item.objects.filter(id__in= categoryItemList,status=Item.ACTIVE,isFeatured=True).order_by('-stock',"-newArrivalTill")[:20]
-        serialized_data =ItemSerializer(items, many=True).data
+        # Optimize query by prefetching variants to avoid N+1 queries
+        items = Item.objects.filter(id__in= categoryItemList,status=Item.ACTIVE,isFeatured=True).prefetch_related('variants').order_by('-stock',"-newArrivalTill")[:20]
+        
+        # Use variant-aware serializer to include variants, available_colors, etc.
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            serialized_data = ItemWithVariantsSerializer(items, many=True).data
+        except Exception as e:
+            # Log the error and fallback to regular serializer
+            logger.error("Error using ItemWithVariantsSerializer in getItemSearchCategory: %s" % (str(e)))
+            print("Error using ItemWithVariantsSerializer: ", e)
+            serialized_data = ItemSerializer(items, many=True).data
     except Exception as e:
             logger.error("Exception in getItemSearchCategory: %s " %(str(e)))
     return JsonResponse(serialized_data, safe=False)
