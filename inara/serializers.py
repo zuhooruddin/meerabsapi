@@ -254,13 +254,17 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
     
     def get_available_colors(self, obj):
         """Get list of unique colors available for this product"""
-        variants = obj.variants.filter(status=ProductVariant.ACTIVE, stock_quantity__gt=0)
+        # Return all variants (not just active) so frontend can detect if product has variants
+        # Frontend will handle filtering active variants for display
+        variants = obj.variants.all()  # Get all variants, not just active ones
         colors = variants.values('color', 'color_hex').distinct()
         return list(colors)
     
     def get_available_sizes(self, obj):
         """Get list of unique sizes available for this product"""
-        variants = obj.variants.filter(status=ProductVariant.ACTIVE, stock_quantity__gt=0)
+        # Return all variants (not just active) so frontend can detect if product has variants
+        # Frontend will handle filtering active variants for display
+        variants = obj.variants.all()  # Get all variants, not just active ones
         sizes = variants.values_list('size', flat=True).distinct().order_by('size')
         return list(sizes)
     
