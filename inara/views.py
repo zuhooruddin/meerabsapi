@@ -687,6 +687,9 @@ def get_all_paginated_items(request):
         elif sort_option == 'price_desc':
             itemObject = itemObject.order_by("-salePrice") 
 
+        # Optimize query by prefetching variants to avoid N+1 queries
+        itemObject = itemObject.prefetch_related('variants')
+
         paginator = Paginator(itemObject, page_size)
         page_obj = paginator.get_page(page)
 
@@ -694,8 +697,10 @@ def get_all_paginated_items(request):
         try:
             from inara.serializers import ItemWithVariantsSerializer
             serializer = ItemWithVariantsSerializer(page_obj, many=True)
-        except:
-            # Fallback to regular serializer if variant serializer not available
+        except Exception as e:
+            # Log the error and fallback to regular serializer
+            logger.error("Error using ItemWithVariantsSerializer in get_all_paginated_items: %s" % (str(e)))
+            print("Error using ItemWithVariantsSerializer: ", e)
             serializer = ItemSerializer(page_obj, many=True)
         
         data = {
@@ -2809,7 +2814,7 @@ class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
     def get_queryset(self):
         itemObject = {}
         try:
-            itemObject = Item.objects.filter(appliesOnline=1,status=Item.ACTIVE).order_by("-newArrivalTill","-isFeatured","-stock")
+            itemObject = Item.objects.filter(appliesOnline=1,status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
         except Exception as e:
             logger.error("Exception in getAllWebsitePaginatedItem: %s " %(str(e)))
         return itemObject
@@ -2915,6 +2920,9 @@ def get_all_website_paginated_item(request):
         elif sort_option == 'desc':
             products = products.order_by('-salePrice')  
 
+        # Optimize query by prefetching variants to avoid N+1 queries
+        products = products.prefetch_related('variants')
+        
         paginator = Paginator(products, page_size)
         page_obj = paginator.get_page(page)
 
@@ -2922,8 +2930,10 @@ def get_all_website_paginated_item(request):
         try:
             from inara.serializers import ItemWithVariantsSerializer
             serializer = ItemWithVariantsSerializer(page_obj, many=True)
-        except:
-            # Fallback to regular serializer if variant serializer not available
+        except Exception as e:
+            # Log the error and fallback to regular serializer
+            logger.error("Error using ItemWithVariantsSerializer: %s" % (str(e)))
+            print("Error using ItemWithVariantsSerializer: ", e)
             serializer = ItemSerializer(page_obj, many=True)
         
         data = {

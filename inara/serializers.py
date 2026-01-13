@@ -288,6 +288,15 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        
+        # Ensure variants are included even if empty
+        if 'variants' not in representation:
+            representation['variants'] = []
+        if 'available_colors' not in representation:
+            representation['available_colors'] = []
+        if 'available_sizes' not in representation:
+            representation['available_sizes'] = []
+        
         if instance.image:
             representation['image'] = instance.image.url
         return representation
