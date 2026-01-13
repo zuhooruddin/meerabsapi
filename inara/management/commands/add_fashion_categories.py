@@ -231,3 +231,5 @@ class Command(BaseCommand):
             f'   - Total: {categories_created + categories_updated}'
         ))
 
+
+

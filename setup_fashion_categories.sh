@@ -11,3 +11,5 @@ python manage.py setup_homepage_sections
 echo ""
 echo "✅ Fashion categories have been added and homepage sections have been configured!"
 
+
+

@@ -627,8 +627,16 @@ def getCategoryDetail(request):
 @permission_classes((AllowAny,))
 # @csrf_exempt
 class PaginatedCategory(generics.ListCreateAPIView):
-    serializer_class = ItemSerializer
+    serializer_class = ItemSerializer  # Default, but we'll override in get_serializer_class
     pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        """Use ItemWithVariantsSerializer to include variant information"""
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            return ItemWithVariantsSerializer
+        except:
+            return ItemSerializer
 
     def get_queryset(self):
         itemObject={}
@@ -2785,10 +2793,18 @@ def registerUser(request):
 
 @permission_classes((AllowAny,))
 class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
-    serializer_class = ItemSerializer
+    serializer_class = ItemSerializer  # Default, but we'll override in get_serializer_class
     pagination_class = AdminResultsSetPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'slug','sku','author','isbn','manufacturer']
+
+    def get_serializer_class(self):
+        """Use ItemWithVariantsSerializer to include variant information"""
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            return ItemWithVariantsSerializer
+        except:
+            return ItemSerializer
 
     def get_queryset(self):
         itemObject = {}
@@ -2902,7 +2918,14 @@ def get_all_website_paginated_item(request):
         paginator = Paginator(products, page_size)
         page_obj = paginator.get_page(page)
 
-        serializer = ItemSerializer(page_obj, many=True)
+        # Use variant-aware serializer to include variants, available_colors, etc.
+        try:
+            from inara.serializers import ItemWithVariantsSerializer
+            serializer = ItemWithVariantsSerializer(page_obj, many=True)
+        except:
+            # Fallback to regular serializer if variant serializer not available
+            serializer = ItemSerializer(page_obj, many=True)
+        
         data = {
             'results': serializer.data,
             'count': paginator.count

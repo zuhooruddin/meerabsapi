@@ -10,3 +10,5 @@ python manage.py setup_homepage_sections
 Write-Host ""
 Write-Host "✅ Fashion categories have been added and homepage sections have been configured!" -ForegroundColor Green
 
+
+
