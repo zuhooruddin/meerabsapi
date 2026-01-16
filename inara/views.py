@@ -4038,6 +4038,15 @@ def addItem(request):
         isFeatured = request.POST.get('isFeatured', 0)
         discount = request.POST.get('discount', 0)
         
+        # Helper function to safely convert to int, handling 'null' string and empty strings
+        def safe_int(value):
+            if not value or value == '' or value == 'null' or value == 'None':
+                return None
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return None
+        
         # Clothing-specific fields
         brand = request.POST.get('brand', '')
         product_category = request.POST.get('product_category', '')
@@ -4055,8 +4064,8 @@ def addItem(request):
             height=height,
             width=width,
             stock=stock,
-            mrp=mrp,
-            salePrice=saleprice,
+            mrp=safe_int(mrp),
+            salePrice=safe_int(saleprice),
             author=author,
             image=image,
             youtube_link=youtube_link,
@@ -4068,15 +4077,15 @@ def addItem(request):
             metaUrl=metaUrl,
             metaTitle=metaTitle,
             metaDescription=metaDescription,
-            isNewArrival=isNewArrival,
+            isNewArrival=safe_int(isNewArrival) if isNewArrival else 0,
             newArrivalTill=newArrivalTill,
-            isFeatured=isFeatured,
-            discount=discount,
+            isFeatured=safe_int(isFeatured) if isFeatured else 0,
+            discount=safe_int(discount) if discount else 0,
             # Clothing-specific fields
             brand=brand if brand else None,
             product_category=product_category if product_category else None,
-            base_price=int(base_price) if base_price else None,
-            discount_price=int(discount_price) if discount_price else None,
+            base_price=safe_int(base_price),
+            discount_price=safe_int(discount_price),
             is_active=is_active,
         )
         item.save()
