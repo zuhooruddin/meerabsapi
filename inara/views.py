@@ -2522,11 +2522,16 @@ def getOrderDetails(request):
 @permission_classes((AllowAny,))
 @csrf_exempt
 def getItemSearchCategory(request):
-    serialized_data = {}
-    slug = request.data['id']
+    serialized_data = []
+    slug = request.data.get('id')
+    if not slug:
+        return JsonResponse([], safe=False)
     try:
         categoryObject = Category.objects.get(slug=slug)    
         categoryItemList = list(CategoryItem.objects.filter(categoryId=categoryObject).values_list("itemId",flat=True))
+        
+        if not categoryItemList:
+            return JsonResponse([], safe=False)
         
         # Optimize query by prefetching variants to avoid N+1 queries
         items = Item.objects.filter(id__in= categoryItemList,status=Item.ACTIVE,isFeatured=True).prefetch_related('variants').order_by('-stock',"-newArrivalTill")[:20]
@@ -2540,8 +2545,12 @@ def getItemSearchCategory(request):
             logger.error("Error using ItemWithVariantsSerializer in getItemSearchCategory: %s" % (str(e)))
             print("Error using ItemWithVariantsSerializer: ", e)
             serialized_data = ItemSerializer(items, many=True).data
+    except Category.DoesNotExist:
+        logger.error("Category not found for slug: %s" % (slug))
+        return JsonResponse([], safe=False)
     except Exception as e:
             logger.error("Exception in getItemSearchCategory: %s " %(str(e)))
+            return JsonResponse([], safe=False)
     return JsonResponse(serialized_data, safe=False)
 
 
