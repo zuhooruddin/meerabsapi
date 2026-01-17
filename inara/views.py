@@ -2534,7 +2534,8 @@ def getItemSearchCategory(request):
             return JsonResponse([], safe=False)
         
         # Optimize query by prefetching variants to avoid N+1 queries
-        items = Item.objects.filter(id__in= categoryItemList,status=Item.ACTIVE,isFeatured=True).prefetch_related('variants').order_by('-stock',"-newArrivalTill")[:20]
+        # Removed isFeatured=True filter to show all active products, not just featured ones
+        items = Item.objects.filter(id__in= categoryItemList,status=Item.ACTIVE).prefetch_related('variants').order_by('-isFeatured','-stock',"-newArrivalTill")[:20]
         
         # Use variant-aware serializer to include variants, available_colors, etc.
         try:
