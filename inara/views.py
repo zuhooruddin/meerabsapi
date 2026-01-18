@@ -2251,18 +2251,53 @@ def getAllOrderNotification(request):
 @csrf_exempt
 def getOrderProduct(request):
     returnList = []
-    orderNo = request.data['orderNo']
     try:
+        orderNo = request.data.get('orderNo') or request.POST.get('orderNo')
+        if not orderNo:
+            return JsonResponse({'error': 'orderNo is required'}, status=400, safe=False)
+        
         orderObject = Order.objects.get(orderNo = orderNo)
         orderDescObject = OrderDescription.objects.filter(order=orderObject)
         for product in orderDescObject:
             itemObject = Item.objects.filter(sku=product.itemSku).values('image','isbn')
-            # print(itemObject[0]['image'])
-            productList = {'id':product.id,'name':product.itemName,'image':itemObject[0]['image'],'isbn':itemObject[0]['isbn'],'price':product.itemIndPrice,'totalPrice':product.itemTotalPrice,'sku':product.itemSku,'qty':product.itemQty,'mrp':product.mrp,'salePrice':product.salePrice, 'isDeleted':product.isDeleted} 
-            returnList.append(productList)
+            if itemObject.exists():
+                productList = {
+                    'id': product.id,
+                    'name': product.itemName,
+                    'image': itemObject[0]['image'] if itemObject[0].get('image') else '',
+                    'isbn': itemObject[0]['isbn'] if itemObject[0].get('isbn') else '',
+                    'price': product.itemIndPrice,
+                    'totalPrice': product.itemTotalPrice,
+                    'sku': product.itemSku,
+                    'qty': product.itemQty,
+                    'mrp': product.mrp,
+                    'salePrice': product.salePrice,
+                    'isDeleted': product.isDeleted
+                }
+                returnList.append(productList)
+            else:
+                # Item not found, but still include the order description
+                productList = {
+                    'id': product.id,
+                    'name': product.itemName,
+                    'image': '',
+                    'isbn': '',
+                    'price': product.itemIndPrice,
+                    'totalPrice': product.itemTotalPrice,
+                    'sku': product.itemSku,
+                    'qty': product.itemQty,
+                    'mrp': product.mrp,
+                    'salePrice': product.salePrice,
+                    'isDeleted': product.isDeleted
+                }
+                returnList.append(productList)
+    except Order.DoesNotExist:
+        logger.error("Order not found: %s" % orderNo)
+        return JsonResponse({'error': 'Order not found'}, status=404, safe=False)
     except Exception as e:
-            print("Exception in getOrderProducts: ",e)
-            logger.error("Exception in getOrderProduct: %s " %(str(e)))
+        print("Exception in getOrderProducts: ", e)
+        logger.error("Exception in getOrderProduct: %s " % (str(e)))
+        return JsonResponse({'error': str(e)}, status=500, safe=False)
     return JsonResponse(returnList, safe=False)
 
 @api_view(['GET', 'POST'])
