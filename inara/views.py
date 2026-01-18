@@ -2257,9 +2257,39 @@ def getOrderProduct(request):
             return JsonResponse({'error': 'orderNo is required'}, status=400, safe=False)
         
         orderObject = Order.objects.get(orderNo = orderNo)
-        orderDescObject = OrderDescription.objects.filter(order=orderObject)
+        orderDescObject = OrderDescription.objects.filter(order=orderObject).select_related('variant')
         for product in orderDescObject:
             itemObject = Item.objects.filter(sku=product.itemSku).values('image','isbn')
+            
+            # Get variant information if exists
+            variant_info = None
+            if product.variant:
+                variant_info = {
+                    'id': product.variant.id,
+                    'color': product.variant.color,
+                    'color_hex': product.variant.color_hex,
+                    'size': product.variant.size,
+                    'variant_price': product.variant.variant_price,
+                    'stock_quantity': product.variant.stock_quantity
+                }
+            elif product.selected_color or product.selected_size:
+                # Fallback to stored color/size if variant relation doesn't exist
+                variant_info = {
+                    'color': product.selected_color,
+                    'size': product.selected_size,
+                    'variant_price': None
+                }
+            
+            # Calculate discount
+            has_discount = False
+            discount_price = None
+            if product.mrp and product.salePrice and float(product.mrp) > float(product.salePrice):
+                has_discount = True
+                discount_price = float(product.salePrice)
+            elif product.mrp and product.itemIndPrice and float(product.mrp) > float(product.itemIndPrice):
+                has_discount = True
+                discount_price = float(product.itemIndPrice)
+            
             if itemObject.exists():
                 productList = {
                     'id': product.id,
@@ -2270,9 +2300,12 @@ def getOrderProduct(request):
                     'totalPrice': product.itemTotalPrice,
                     'sku': product.itemSku,
                     'qty': product.itemQty,
-                    'mrp': product.mrp,
-                    'salePrice': product.salePrice,
-                    'isDeleted': product.isDeleted
+                    'mrp': float(product.mrp) if product.mrp else None,
+                    'salePrice': float(product.salePrice) if product.salePrice else None,
+                    'isDeleted': product.isDeleted,
+                    'has_discount': has_discount,
+                    'discount_price': discount_price,
+                    'variant': variant_info
                 }
                 returnList.append(productList)
             else:
@@ -2286,9 +2319,12 @@ def getOrderProduct(request):
                     'totalPrice': product.itemTotalPrice,
                     'sku': product.itemSku,
                     'qty': product.itemQty,
-                    'mrp': product.mrp,
-                    'salePrice': product.salePrice,
-                    'isDeleted': product.isDeleted
+                    'mrp': float(product.mrp) if product.mrp else None,
+                    'salePrice': float(product.salePrice) if product.salePrice else None,
+                    'isDeleted': product.isDeleted,
+                    'has_discount': has_discount,
+                    'discount_price': discount_price,
+                    'variant': variant_info
                 }
                 returnList.append(productList)
     except Order.DoesNotExist:
