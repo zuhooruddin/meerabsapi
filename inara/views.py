@@ -993,12 +993,23 @@ def getItemDetail(request):
         #             if categoryObject.parentId == parentPId:
         #                 publisherFlag = True
         #                 break
-        parentList = {'id':itemObject.id ,'slug':itemObject.slug,'isbn': itemObject.isbn,'length':itemObject.length,'width':itemObject.width,'height':itemObject.height,'weight':itemObject.weight,'mrp': itemObject.mrp,'salePrice':itemObject.salePrice,'sku':itemObject.sku,'stock':itemObject.stock,'name':itemObject.name,'imgUrl':itemObject.image.name,'category':'Category','manufacturer':itemObject.manufacturer,'author':itemObject.author,'aliasCode':itemObject.aliasCode,'description':itemObject.description,'instructions':itemObject.itemInstructions,'metaTitle':itemObject.metaTitle,'metaDescription':itemObject.metaDescription,'metaUrl':itemObject.metaUrl,'isNewArrival':itemObject.isNewArrival,'discount':itemObject.discount,'rating':3,'imgGroup':[],'publisherFlag':publisherFlag}
-        galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk).values('id','image','status','itemId')
-        parentList['imgGroup'].append(itemObject.image.name,)
+        parentList = {'id':itemObject.id ,'slug':itemObject.slug,'isbn': itemObject.isbn,'length':itemObject.length,'width':itemObject.width,'height':itemObject.height,'weight':itemObject.weight,'mrp': itemObject.mrp,'salePrice':itemObject.salePrice,'sku':itemObject.sku,'stock':itemObject.stock,'name':itemObject.name,'imgUrl':itemObject.image.url if itemObject.image else '','category':'Category','manufacturer':itemObject.manufacturer,'author':itemObject.author,'aliasCode':itemObject.aliasCode,'description':itemObject.description,'instructions':itemObject.itemInstructions,'metaTitle':itemObject.metaTitle,'metaDescription':itemObject.metaDescription,'metaUrl':itemObject.metaUrl,'isNewArrival':itemObject.isNewArrival,'discount':itemObject.discount,'rating':3,'imgGroup':[],'gallery':[],'publisherFlag':publisherFlag}
         
-        for image in galleryObject:
-            parentList['imgGroup'].append(image['image'])
+        # Get gallery images - include main image first, then gallery images
+        gallery_images = []
+        if itemObject.image:
+            gallery_images.append(itemObject.image.url)
+        
+        galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk, status=ItemGallery.ACTIVE).order_by('id')
+        for gallery_item in galleryObject:
+            if gallery_item.image:
+                image_url = gallery_item.image.url
+                # Avoid duplicates
+                if image_url not in gallery_images:
+                    gallery_images.append(image_url)
+        
+        parentList['imgGroup'] = gallery_images
+        parentList['gallery'] = gallery_images
         returnList.append(parentList)
     except Exception as e:
             print(e)
@@ -1027,9 +1038,21 @@ def getItemDetailWithVariants(request):
         serializer = ItemWithVariantsSerializer(itemObject)
         productData = serializer.data
         
-        # Get gallery images
-        galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk, status=ItemGallery.ACTIVE)
-        galleryImages = [img.image.url for img in galleryObject]
+        # Get gallery images - include main product image first, then gallery images
+        galleryImages = []
+        
+        # Add main product image first
+        if itemObject.image:
+            galleryImages.append(itemObject.image.url)
+        
+        # Get all active gallery images
+        galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk, status=ItemGallery.ACTIVE).order_by('id')
+        for gallery_item in galleryObject:
+            if gallery_item.image:
+                image_url = gallery_item.image.url
+                # Avoid duplicates (in case main image is also in gallery)
+                if image_url not in galleryImages:
+                    galleryImages.append(image_url)
         
         # Get categories
         categoryList = list(CategoryItem.objects.filter(

@@ -240,6 +240,8 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
     available_colors = serializers.SerializerMethodField()
     available_sizes = serializers.SerializerMethodField()
     price_range = serializers.SerializerMethodField()
+    gallery = serializers.SerializerMethodField()
+    imgGroup = serializers.SerializerMethodField()
     
     class Meta:
         model = Item
@@ -249,7 +251,7 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
             'is_active', 'status', 'mrp', 'salePrice', 'discount',
             'metaUrl', 'metaTitle', 'metaDescription', 'isFeatured',
             'isNewArrival', 'variants', 'available_colors', 'available_sizes',
-            'price_range'
+            'price_range', 'gallery', 'imgGroup'
         ]
     
     def get_available_colors(self, obj):
@@ -285,6 +287,34 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
             'min_price': min(prices) if prices else obj.base_price or obj.salePrice,
             'max_price': max(prices) if prices else obj.base_price or obj.salePrice
         }
+    
+    def get_gallery(self, obj):
+        """Get all gallery images including main product image"""
+        gallery_images = []
+        
+        # Add main product image first
+        if obj.image:
+            gallery_images.append(obj.image.url)
+        
+        # Get all active gallery images
+        from inara.models import ItemGallery
+        gallery_items = ItemGallery.objects.filter(
+            itemId=obj.pk, 
+            status=ItemGallery.ACTIVE
+        ).order_by('id')
+        
+        for gallery_item in gallery_items:
+            if gallery_item.image:
+                image_url = gallery_item.image.url
+                # Avoid duplicates (in case main image is also in gallery)
+                if image_url not in gallery_images:
+                    gallery_images.append(image_url)
+        
+        return gallery_images
+    
+    def get_imgGroup(self, obj):
+        """Alias for gallery - for backward compatibility"""
+        return self.get_gallery(obj)
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
