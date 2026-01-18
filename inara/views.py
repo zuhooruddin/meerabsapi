@@ -2083,28 +2083,59 @@ def syncCustomers(request):
 def addOrder(request):
         context = {}
         shipObj={}
-        valueDict = request.data['valueDict']
-        userid=request.data['userid']
-        cartList = request.data['cartList']
-        totalPrice = request.data['totalPrice']
-        deliveryfee = request.data['deliveryFee']
+        valueDict = request.data.get('valueDict', {})
+        userid = request.data.get('userid', None)  # Make userid optional for guest checkout
+        cartList = request.data.get('cartList', [])
+        totalPrice = request.data.get('totalPrice', 0)
+        deliveryfee = request.data.get('deliveryFee', 0)
 
         totalItemQty = 0
-        name=valueDict['name']
+        name = valueDict.get('name', '')
         logger.info("Request: %s" %(request.data))
         date = datetime.date.today()
         formatedDate = date.strftime("%Y""%m""%d")
-        sh=UserShippingDetail.objects.filter(user=userid,area=valueDict['city'],city=valueDict['city'],address=valueDict['address']).values()
+        
+        # Only filter shipping details if userid is provided
+        sh = UserShippingDetail.objects.none()
+        if userid:
+            sh = UserShippingDetail.objects.filter(user=userid, area=valueDict.get('city', ''), city=valueDict.get('city', ''), address=valueDict.get('address', '')).values()
+        
         try:
-            orderObj = Order.objects.create(custId=userid,custName=valueDict['name'], custEmail=valueDict['email'], custPhone=valueDict['phone'], cust_phone2=valueDict['phone2'], custCity=valueDict['city'], shippingAddress=valueDict['address'], shippingCity=valueDict['city'], totalBill=totalPrice, deliveryCharges=deliveryfee, discountedBill=totalPrice, paymentMethod='COD')
+            # Create order - custId can be None for guest checkout
+            orderObj = Order.objects.create(
+                custId=userid,
+                custName=valueDict.get('name', ''),
+                custEmail=valueDict.get('email', ''),
+                custPhone=valueDict.get('phone', ''),
+                cust_phone2=valueDict.get('phone2', ''),
+                custCity=valueDict.get('city', ''),
+                shippingAddress=valueDict.get('address', ''),
+                shippingCity=valueDict.get('city', ''),
+                totalBill=totalPrice,
+                deliveryCharges=deliveryfee,
+                discountedBill=totalPrice,
+                paymentMethod='COD'
+            )
             formatedOrderNo = str(formatedDate)+str(orderObj.pk)  
-            if(User.objects.filter(id=userid).exists()):
+            
+            # Handle shipping details - only create if userid exists
+            if userid and User.objects.filter(id=userid).exists():
                 if sh.exists():
-                    shipObj={}
+                    shipObj = {}
                 else:
-                    shipObj=   UserShippingDetail.objects.create(user=User.objects.get(id=userid),area=valueDict['city'],city=valueDict['city'],address=valueDict['address'])
+                    shipObj = UserShippingDetail.objects.create(
+                        user=User.objects.get(id=userid),
+                        area=valueDict.get('city', ''),
+                        city=valueDict.get('city', ''),
+                        address=valueDict.get('address', '')
+                    )
             else:
-                shipObj=   UserShippingDetail.objects.create(area=valueDict['city'],city=valueDict['city'],address=valueDict['address'])
+                # Guest checkout - create shipping detail without user
+                shipObj = UserShippingDetail.objects.create(
+                    area=valueDict.get('city', ''),
+                    city=valueDict.get('city', ''),
+                    address=valueDict.get('address', '')
+                )
             for cart in cartList:
                 # print('In Cart List')
                 totalItemQty = cart['qty'] + totalItemQty
@@ -2162,7 +2193,7 @@ def addOrder(request):
             email_template = 'email_template.html'
             message = f'{context}'
             email_from = settings.EMAIL_HOST_USER
-            recipient_list = [valueDict['email'], ]
+            recipient_list = [valueDict.get('email', ''), ]
             email_body = render_to_string(email_template,{'ship':ship,'order':cartList,'detail':detail,'host':host,'sitesetting':sitesetting,'imageurl':ImageUrl})
            
             msg = EmailMultiAlternatives(subject=subject, from_email=email_from,
