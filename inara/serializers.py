@@ -357,7 +357,7 @@ class UserSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = ['id', 'orderNo', 'custName', 'custEmail', 'custPhone', 'custCity', 'shippingAddress', 'shippingCity', 'totalBill', 'discountedBill', 'deliveryCharges', 'totalItems', 'paymentMethod', 'paymentid', 'paymentsessionid', 'paymentstatus', 'paymenttime', 'customeronlinepaymentinvoice', 'deliveryType', 'status', 'created_at', 'updated_at']
+        fields = '__all__'
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
