@@ -130,3 +130,4 @@ class Command(BaseCommand):
             f'   - Cities skipped: {cities_skipped}\n'
         ))
 
+

@@ -126,3 +126,4 @@ The data can also be accessed via the API endpoints:
 - `getAllCity` - Get all cities
 - `getcountries` - Get countries list for dropdowns
 
+

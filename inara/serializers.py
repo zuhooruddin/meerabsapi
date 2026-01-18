@@ -1,5 +1,6 @@
 from inara.models import *
 from rest_framework import serializers
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model, authenticate
 from django.conf import settings
@@ -359,11 +360,25 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = '__all__'
     
+    def _compute_order_total(self, instance):
+        total = Decimal("0.00")
+        for item in instance.order_description_id.filter(isDeleted=False):
+            if item.itemTotalPrice is not None:
+                total += item.itemTotalPrice
+            elif item.itemIndPrice is not None and item.itemQty is not None:
+                total += item.itemIndPrice * item.itemQty
+        return total
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         # Convert DecimalField to float for JSON serialization
         if representation.get('totalBill') is not None:
             representation['totalBill'] = float(representation['totalBill'])
+        else:
+            computed_total = self._compute_order_total(instance)
+            representation['totalBill'] = float(computed_total)
+            if representation.get('discountedBill') is None:
+                representation['discountedBill'] = float(computed_total)
         if representation.get('discountedBill') is not None:
             representation['discountedBill'] = float(representation['discountedBill'])
         if representation.get('deliveryCharges') is not None:

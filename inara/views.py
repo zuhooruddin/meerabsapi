@@ -1,6 +1,7 @@
 from asyncio import constants
 from multiprocessing import context
 import re,math
+from decimal import Decimal
 
 import site
 from datetime import datetime, timedelta
@@ -2260,6 +2261,11 @@ def getOrderProduct(request):
         orderDescObject = OrderDescription.objects.filter(order=orderObject).select_related('variant')
         for product in orderDescObject:
             itemObject = Item.objects.filter(sku=product.itemSku).values('image','isbn')
+            item_qty = product.itemQty or 0
+            unit_price = product.itemIndPrice or product.salePrice or product.mrp or 0
+            total_price = product.itemTotalPrice
+            if total_price is None and unit_price and item_qty:
+                total_price = unit_price * item_qty
             
             # Get variant information if exists
             variant_info = None
@@ -2296,10 +2302,10 @@ def getOrderProduct(request):
                     'name': product.itemName,
                     'image': itemObject[0]['image'] if itemObject[0].get('image') else '',
                     'isbn': itemObject[0]['isbn'] if itemObject[0].get('isbn') else '',
-                    'price': product.itemIndPrice,
-                    'totalPrice': product.itemTotalPrice,
+                    'price': float(unit_price) if unit_price is not None else None,
+                    'totalPrice': float(total_price) if total_price is not None else None,
                     'sku': product.itemSku,
-                    'qty': product.itemQty,
+                    'qty': item_qty,
                     'mrp': float(product.mrp) if product.mrp else None,
                     'salePrice': float(product.salePrice) if product.salePrice else None,
                     'isDeleted': product.isDeleted,
@@ -2315,10 +2321,10 @@ def getOrderProduct(request):
                     'name': product.itemName,
                     'image': '',
                     'isbn': '',
-                    'price': product.itemIndPrice,
-                    'totalPrice': product.itemTotalPrice,
+                    'price': float(unit_price) if unit_price is not None else None,
+                    'totalPrice': float(total_price) if total_price is not None else None,
                     'sku': product.itemSku,
-                    'qty': product.itemQty,
+                    'qty': item_qty,
                     'mrp': float(product.mrp) if product.mrp else None,
                     'salePrice': float(product.salePrice) if product.salePrice else None,
                     'isDeleted': product.isDeleted,
@@ -2363,6 +2369,17 @@ def getOrder(request):
                 order['discountedBill'] = float(order['discountedBill'])
             if order.get('deliveryCharges') is not None:
                 order['deliveryCharges'] = float(order['deliveryCharges'])
+            if order.get('totalBill') is None:
+                order_obj = Order.objects.get(orderNo=orderNo)
+                computed_total = Decimal("0.00")
+                for item in order_obj.order_description_id.filter(isDeleted=False):
+                    if item.itemTotalPrice is not None:
+                        computed_total += item.itemTotalPrice
+                    elif item.itemIndPrice is not None and item.itemQty is not None:
+                        computed_total += item.itemIndPrice * item.itemQty
+                order['totalBill'] = float(computed_total)
+                if order.get('discountedBill') is None:
+                    order['discountedBill'] = float(computed_total)
     except Exception as e:
         logger.error("Exception in getOrder: %s " % (str(e)))
         return JsonResponse({'error': str(e)}, status=500, safe=False)
