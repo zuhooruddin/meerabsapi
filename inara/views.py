@@ -2342,11 +2342,30 @@ def getOrderProduct(request):
 @csrf_exempt
 def getOrder(request):
     orderObject = {}
-    orderNo = request.data['orderNo']
     try:
-        orderObject = list(Order.objects.filter(orderNo = orderNo).values('id','orderNo','custName','custEmail','custPhone','cust_phone2','custCity','shippingAddress','shippingCity','totalBill','discountedBill','deliveryCharges','totalItems','paymentMethod','timestamp','status','orderNotification','paymentstatus','paymentid','paymenttime','customeronlinepaymentinvoice'))
+        orderNo = request.data.get('orderNo') or request.POST.get('orderNo')
+        if not orderNo:
+            return JsonResponse({'error': 'orderNo is required'}, status=400, safe=False)
+        
+        orderQuery = Order.objects.filter(orderNo=orderNo).values(
+            'id','orderNo','custName','custEmail','custPhone','cust_phone2','custCity',
+            'shippingAddress','shippingCity','totalBill','discountedBill','deliveryCharges',
+            'totalItems','paymentMethod','timestamp','status','orderNotification',
+            'paymentstatus','paymentid','paymenttime','customeronlinepaymentinvoice'
+        )
+        orderObject = list(orderQuery)
+        
+        # Convert DecimalField to float for JSON serialization
+        for order in orderObject:
+            if order.get('totalBill') is not None:
+                order['totalBill'] = float(order['totalBill'])
+            if order.get('discountedBill') is not None:
+                order['discountedBill'] = float(order['discountedBill'])
+            if order.get('deliveryCharges') is not None:
+                order['deliveryCharges'] = float(order['deliveryCharges'])
     except Exception as e:
-            logger.error("Exception in getOrder: %s " %(str(e)))
+        logger.error("Exception in getOrder: %s " % (str(e)))
+        return JsonResponse({'error': str(e)}, status=500, safe=False)
     return JsonResponse(orderObject, safe=False)
 
 @api_view(['GET', 'POST'])

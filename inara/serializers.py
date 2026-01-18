@@ -356,8 +356,19 @@ class UserSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = '__all__'
+
         # depth = 2
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Convert DecimalField to float for JSON serialization
+        if representation.get('totalBill') is not None:
+            representation['totalBill'] = float(representation['totalBill'])
+        if representation.get('discountedBill') is not None:
+            representation['discountedBill'] = float(representation['discountedBill'])
+        if representation.get('deliveryCharges') is not None:
+            representation['deliveryCharges'] = float(representation['deliveryCharges'])
+        return representation
 
 class ItemGallerySerializer(serializers.ModelSerializer):
     class Meta:
