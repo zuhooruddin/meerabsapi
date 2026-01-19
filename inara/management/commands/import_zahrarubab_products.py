@@ -119,22 +119,57 @@ class Command(BaseCommand):
         return category
 
     def _get_or_create_target_categories(self, parent):
-        target_names = [
-            "Zardozi - Nikkah Edit",
-            "Silk",
-            "Zardozi - Nikkah Edit Summer",
-            "FORMALS",
-            "Lawn",
+        # All categories to create (with their slugs)
+        category_list = [
+            ("2 PC - Cotton Viscose", "2-pc-cotton-viscose", None),
+            ("2 PC - Karandi Unstitched", "2-pc-karandi-unstitched", None),
+            ("2 PC - Linen Unstitched", "2-pc-linen-unstitched", None),
+            ("2 PC - Wedding Unstitched (Raw Silk)", "2-pc-wedding-unstitched-raw-silk", None),
+            ("3 PC - Cambric", "3-pc-cambric", None),
+            ("3 PC - Linen Unstitched", "3-pc-linen-unstitched", None),
+            ("3 PC - Premium Khaddar", "3-pc-premium-khaddar", None),
+            ("3 PC Chikankari - Summer", "3-pc-chikankari-summer", None),
+            ("3 Pc - Karandi Unstitched", "3-pc-karandi-unstitched", None),
+            ("3 Pc Suit - Karandi Embroidered Shawl", "3-pc-suit-karandi-embroidered-shawl", None),
+            ("All IN STORE", "all-in-store", parent),
+            ("CRYSTAL", "crystal", parent),
+            ("Daily Edit - Summer", "daily-edit-summer", None),
+            ("END OF SEASON", "end-of-season", None),
+            ("FORMALS", "formals", parent),
+            ("Festive Embroidered - Summer", "festive-embroidered-summer", None),
+            ("Home Couture", "home-couture", None),
+            ("Karandi Unstitched", "karandi-unstitched-", None),
+            ("Khaddar Unstitched", "khaddar-unstitched-", None),
+            ("LAVENDER", "lavender", parent),
+            ("Lawn", "lawn", None),
+            ("Linen Unstitched", "linen-unstitched", None),
+            ("Luxury Pret", "luxury-pret", None),
+            ("Luxury Pret (Grip)", "luxury-pret-grip", None),
+            ("Men", "men", None),
+            ("Menswear", "menswear", None),
+            ("MOON LIGHT", "moon-light", parent),
+            ("Ready To Wear - Summer", "ready-to-wear-summer", None),
+            ("SHOP BY PRICE", "shop-by-price", None),
+            ("Silk", "silk", parent),
+            ("STUDIO SAMPLES", "studio-samples", None),
+            ("WINTER", "winter", None),
+            ("Wedding Festive Pret", "wedding-festive-pret", None),
+            ("Women", "women", None),
+            ("ZIRCON", "zircon", parent),
+            ("Zardozi - Nikkah Edit", "zardozi-nikkah-edit", parent),
+            ("Zardozi - Nikkah Edit Summer", "zardozi-nikkah-edit-summer", parent),
         ]
+        
         categories = {}
-        for name in target_names:
-            slug = slugify(name)[:150] or "zahrarubab-uncategorized"
+        for name, slug, category_parent in category_list:
+            # Use provided parent or main parent
+            parent_category = category_parent if category_parent else parent
             category, _ = Category.objects.get_or_create(
                 slug=slug,
                 defaults={
                     "name": name,
                     "description": f"Imported products for {name}",
-                    "parentId": parent,
+                    "parentId": parent_category,
                     "status": Category.ACTIVE,
                     "appliesOnline": 1,
                     "showAtHome": 0,
@@ -211,36 +246,30 @@ class Command(BaseCommand):
         else:
             item = Item.objects.create(**item_values)
 
-        # Add product to ALL target categories
-        matched_categories = list(category_map.values())
+        # Match product to appropriate categories based on title, tags, and product type
+        matched_categories = self._match_product_categories(
+            title=title,
+            tags=tags,
+            product_type=product.get("product_type") or "",
+            category_map=category_map,
+        )
         
-        # Check if product should be added to Lawn category based on title/tags
-        title_lower = title.lower()
-        tags_text = ", ".join(tags) if isinstance(tags, list) else (tags or "")
-        tags_lower = tags_text.lower()
-        search_text = f"{title_lower} {tags_lower}"
-        
-        # Add to Lawn if title/tags contain lawn-related keywords
-        lawn_keywords = ["lawn", "lawn suit", "lawn collection", "summer lawn"]
-        should_add_to_lawn = any(keyword in search_text for keyword in lawn_keywords)
-        
-        # If not matched by keywords, randomly add 20% of products to Lawn
-        if not should_add_to_lawn:
-            should_add_to_lawn = random.random() < 0.2
-        
-        if should_add_to_lawn:
-            self.stdout.write(f"  → Added to LAWN category: {item_sku}")
+        # Always add to "All IN STORE" category
+        if category_map.get("all in store"):
+            if category_map["all in store"] not in matched_categories:
+                matched_categories.append(category_map["all in store"])
 
+        # Add product to matched categories
         for category in matched_categories:
-            # Skip Lawn category if product doesn't match criteria
-            if category.name.lower() == "lawn" and not should_add_to_lawn:
-                continue
-                
             CategoryItem.objects.get_or_create(
                 categoryId=category,
                 itemId=item,
                 defaults={"level": 2, "status": CategoryItem.ACTIVE},
             )
+        
+        if matched_categories:
+            category_names = [cat.name for cat in matched_categories]
+            self.stdout.write(f"  → Added to categories: {', '.join(category_names[:5])}{'...' if len(category_names) > 5 else ''}")
 
         # Download images if enabled and available
         if download_images:
@@ -465,15 +494,89 @@ class Command(BaseCommand):
                     return value
         return None
 
-    def _match_categories(self, title, tags, product_type, category_map):
+    def _match_product_categories(self, title, tags, product_type, category_map):
+        """
+        Match product to appropriate categories based on title, tags, and product type.
+        Returns list of matched categories.
+        """
         tags_text = ", ".join(tags) if isinstance(tags, list) else (tags or "")
-        haystack = " ".join([title or "", tags_text, product_type or ""]).lower()
+        search_text = " ".join([title or "", tags_text, product_type or ""]).lower()
         matches = []
-        for name, category in category_map.items():
-            if name == "all in store":
+        
+        # Define keyword mappings for each category
+        category_keywords = {
+            "2 pc - cotton viscose": ["2 pc", "cotton viscose", "two piece cotton viscose"],
+            "2 pc - karandi unstitched": ["2 pc karandi", "two piece karandi", "karandi unstitched 2pc"],
+            "2 pc - linen unstitched": ["2 pc linen", "two piece linen", "linen unstitched 2pc"],
+            "2 pc - wedding unstitched (raw silk)": ["2 pc wedding", "two piece wedding", "raw silk 2pc", "wedding unstitched 2pc"],
+            "3 pc - cambric": ["3 pc cambric", "three piece cambric", "cambric 3pc"],
+            "3 pc - linen unstitched": ["3 pc linen", "three piece linen", "linen unstitched 3pc"],
+            "3 pc - premium khaddar": ["3 pc khaddar", "three piece khaddar", "premium khaddar 3pc"],
+            "3 pc chikankari - summer": ["3 pc chikankari", "three piece chikankari", "chikankari summer 3pc"],
+            "3 pc - karandi unstitched": ["3 pc karandi", "three piece karandi", "karandi unstitched 3pc"],
+            "3 pc suit - karandi embroidered shawl": ["3 pc suit karandi", "karandi embroidered shawl", "3pc suit"],
+            "crystal": ["crystal"],
+            "daily edit - summer": ["daily edit", "summer daily"],
+            "end of season": ["end of season", "sale", "clearance"],
+            "formals": ["formal", "formals", "office wear", "corporate"],
+            "festive embroidered - summer": ["festive embroidered", "summer festive"],
+            "home couture": ["home", "homewear", "loungewear"],
+            "karandi unstitched": ["karandi unstitched", "karandi"],
+            "khaddar unstitched": ["khaddar unstitched", "khaddar"],
+            "lavender": ["lavender"],
+            "lawn": ["lawn", "lawn suit", "summer lawn"],
+            "linen unstitched": ["linen unstitched", "linen"],
+            "luxury pret": ["luxury pret", "luxury", "premium"],
+            "luxury pret (grip)": ["luxury pret grip", "grip"],
+            "men": ["men", "mens", "male"],
+            "menswear": ["menswear", "men wear", "male clothing"],
+            "moon light": ["moon light", "moonlight"],
+            "ready to wear - summer": ["ready to wear", "rtw", "summer ready"],
+            "shop by price": [],  # Will be assigned randomly or by price range
+            "silk": ["silk", "raw silk", "pure silk"],
+            "studio samples": ["sample", "studio sample"],
+            "winter": ["winter", "winter wear", "warm"],
+            "wedding festive pret": ["wedding", "festive", "bridal", "occasion wear"],
+            "women": ["women", "womens", "female", "ladies"],
+            "zircon": ["zircon"],
+            "zardozi - nikkah edit": ["zardozi", "nikkah edit", "zardozi nikkah"],
+            "zardozi - nikkah edit summer": ["zardozi summer", "nikkah edit summer", "zardozi nikkah summer"],
+        }
+        
+        # Match categories based on keywords
+        for category_name, keywords in category_keywords.items():
+            if category_name not in category_map:
                 continue
-            if name in haystack:
-                matches.append(category)
+                
+            # Check if any keyword matches
+            matched = False
+            for keyword in keywords:
+                if keyword in search_text:
+                    matched = True
+                    break
+            
+            # Special handling for certain categories
+            if category_name == "shop by price":
+                # Add 10% of products randomly to shop by price
+                if random.random() < 0.1:
+                    matched = True
+            elif category_name == "end of season":
+                # Check for sale/clearance indicators
+                if any(word in search_text for word in ["sale", "clearance", "discount", "end of season"]):
+                    matched = True
+            
+            if matched:
+                matches.append(category_map[category_name])
+        
+        # Ensure at least one category is matched (fallback to common categories)
+        if not matches:
+            # Default fallback categories
+            fallback_categories = ["women", "all in store"]
+            for fallback in fallback_categories:
+                if fallback in category_map:
+                    matches.append(category_map[fallback])
+                    break
+        
         return matches
 
     def _ensure_unique_variant_sku(self, sku, item, variant):
