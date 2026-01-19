@@ -6,7 +6,7 @@ from decimal import Decimal
 import re
 import time
 import random
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 
 import requests
 from django.core.files.base import ContentFile
@@ -326,6 +326,39 @@ class Command(BaseCommand):
         
         self.stdout.write(self.style.SUCCESS(f"  Imported {imported_count} variant(s) for product {item.sku}"))
 
+    def _get_full_size_image_url(self, url):
+        """
+        Convert Shopify image URL to full-size original image URL.
+        Removes size suffixes like _1024x1024, _2048x2048, _small, _medium, _large, etc.
+        """
+        if not url:
+            return url
+        
+        # Remove common Shopify size suffixes from the URL
+        # Pattern: _1024x1024, _2048x2048, _small, _medium, _large, etc.
+        import re
+        
+        # Remove size suffixes before file extension (e.g., image_1024x1024.jpg -> image.jpg)
+        # Match patterns like _1024x1024, _2048x2048, _small, _medium, _large, _grande, _master
+        url = re.sub(r'_(\d+x\d+|small|medium|large|grande|master|compact|thumb)(?=\.)', '', url)
+        
+        # Also remove query parameters that might specify dimensions (but keep version parameter)
+        parsed = urlparse(url)
+        query_params = parse_qs(parsed.query)
+        
+        # Keep only the 'v' (version) parameter, remove dimension-related parameters
+        if 'v' in query_params:
+            new_query = {'v': query_params['v']}
+            new_query_string = urlencode(new_query, doseq=True)
+        else:
+            new_query_string = ''
+        
+        # Reconstruct URL without size parameters
+        new_parsed = parsed._replace(query=new_query_string)
+        full_size_url = urlunparse(new_parsed)
+        
+        return full_size_url
+
     def _download_images(self, item, images):
         if not images:
             self.stdout.write(self.style.WARNING(f"No images found for product {item.sku}"))
@@ -334,27 +367,61 @@ class Command(BaseCommand):
         self.stdout.write(f"Downloading {len(images)} image(s) for product {item.sku}...")
         
         for index, image_data in enumerate(images):
-            url = image_data.get("src")
-            if not url:
+            original_url = image_data.get("src")
+            if not original_url:
                 self.stdout.write(self.style.WARNING(f"Skipping image {index + 1} - no URL"))
                 continue
 
+            # Get full-size image URL
+            full_size_url = self._get_full_size_image_url(original_url)
+            
             try:
-                self.stdout.write(f"  Downloading image {index + 1} from {url[:50]}...")
-                response = requests.get(url, timeout=30)
+                self.stdout.write(f"  Downloading image {index + 1} (full size) from {full_size_url[:60]}...")
+                response = requests.get(full_size_url, timeout=60)  # Increased timeout for larger images
                 response.raise_for_status()
-                filename = f"zahrarubab_{item.sku}_{index + 1}.jpg"
+                
+                # Get file extension from URL or default to jpg
+                file_ext = 'jpg'
+                if '.' in full_size_url:
+                    ext = full_size_url.split('.')[-1].split('?')[0].lower()
+                    if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
+                        file_ext = ext
+                
+                filename = f"zahrarubab_{item.sku}_{index + 1}.{file_ext}"
                 content = ContentFile(response.content)
 
                 if index == 0:
                     item.image.save(filename, content, save=True)
-                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved main image: {filename}"))
+                    file_size_kb = len(response.content) / 1024
+                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved main image: {filename} ({file_size_kb:.1f} KB)"))
                 else:
                     gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
                     gallery.image.save(filename, content, save=True)
-                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved gallery image: {filename}"))
+                    file_size_kb = len(response.content) / 1024
+                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved gallery image: {filename} ({file_size_kb:.1f} KB)"))
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"  ✗ Failed to download image {index + 1}: {str(e)}"))
+                # Try fallback to original URL if full-size fails
+                if full_size_url != original_url:
+                    try:
+                        self.stdout.write(f"  Trying fallback URL: {original_url[:60]}...")
+                        response = requests.get(original_url, timeout=60)
+                        response.raise_for_status()
+                        file_ext = 'jpg'
+                        if '.' in original_url:
+                            ext = original_url.split('.')[-1].split('?')[0].lower()
+                            if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
+                                file_ext = ext
+                        filename = f"zahrarubab_{item.sku}_{index + 1}.{file_ext}"
+                        content = ContentFile(response.content)
+                        if index == 0:
+                            item.image.save(filename, content, save=True)
+                        else:
+                            gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
+                            gallery.image.save(filename, content, save=True)
+                        self.stdout.write(self.style.SUCCESS(f"  ✓ Saved using fallback URL: {filename}"))
+                    except Exception as e2:
+                        self.stdout.write(self.style.ERROR(f"  ✗ Fallback also failed: {str(e2)}"))
                 continue
 
     def _clean_html(self, html):
