@@ -108,8 +108,8 @@ class Command(BaseCommand):
 
     def _get_or_create_target_categories(self, parent):
         target_names = [
-            "Zardozi ? Nikkah Edit",
-            "Zardozi ? Nikkah Edit Summer",
+            "Zardozi - Nikkah Edit",
+            "Zardozi - Nikkah Edit Summer",
             "FORMALS",
             "All IN STORE",
         ]
@@ -300,7 +300,7 @@ class Command(BaseCommand):
         return None
 
     def _match_categories(self, title, tags, product_type, category_map):
-        haystack = " \".join([title or \"\, tags or \"\, product_type or \"\]).lower()
+        haystack = " ".join([title or "", tags or "", product_type or ""]).lower()
         matches = []
         for name, category in category_map.items():
             if name == "all in store":
