@@ -209,14 +209,23 @@ class Command(BaseCommand):
         mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else sale_price
         discount = self._calc_discount(mrp, sale_price)
 
-        # Randomly assign isNewArrival and isFeatured (30% chance for each)
-        is_new = 1 if random.random() < 0.3 else 0
-        is_featured = 1 if random.random() < 0.3 else 0
+        # Check if product is "full width" type (has patterns like "3 Piece Stitched" or "|" in title)
+        title_lower = title.lower()
+        is_full_width = (
+            "3 piece stitched" in title_lower or
+            "|" in title or
+            "piece stitched" in title_lower or
+            any(pattern in title_lower for pattern in ["zr-", "zr "]) and "|" in title
+        )
+        
+        # Only assign isNewArrival and isFeatured to full width products
+        is_new = 1 if is_full_width and random.random() < 0.5 else 0
+        is_featured = 1 if is_full_width and random.random() < 0.5 else 0
         
         if is_new:
-            self.stdout.write(f"  → Marked as NEW ARRIVAL: {item_sku}")
+            self.stdout.write(f"  → Marked as NEW ARRIVAL (full width): {item_sku}")
         if is_featured:
-            self.stdout.write(f"  → Marked as FEATURED: {item_sku}")
+            self.stdout.write(f"  → Marked as FEATURED (full width): {item_sku}")
         
         item_values = {
             "name": title[:150] or "Zahra Rubab Product",
@@ -315,27 +324,32 @@ class Command(BaseCommand):
             # Try to get by SKU first (since it's unique)
             variant_obj = ProductVariant.objects.filter(sku=sku).first()
             
+            # Random stock quantity between 2-229
+            random_stock = random.randint(2, 229)
+            
             if variant_obj:
                 # Update existing variant
                 variant_obj.item = item
                 variant_obj.color = color[:50]
                 variant_obj.size = size
-                variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
+                variant_obj.stock_quantity = random_stock
                 variant_obj.variant_price = int(round(price)) if price is not None else None
                 variant_obj.status = ProductVariant.ACTIVE
                 variant_obj.save()
                 imported_count += 1
-                self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku})")
+                self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
             else:
+                # Random stock quantity between 2-229
+                random_stock = random.randint(2, 229)
+                
                 # Try to get by item, color, size combination
                 variant_obj, created = ProductVariant.objects.get_or_create(
                     item=item,
                     color=color[:50],
                     size=size,
                     defaults={
-
                         "sku": sku[:100],
-                        "stock_quantity": variant.get("inventory_quantity") or 0,
+                        "stock_quantity": random_stock,
                         "variant_price": int(round(price)) if price is not None else None,
                         "status": ProductVariant.ACTIVE,
                     },
@@ -343,15 +357,15 @@ class Command(BaseCommand):
                 # If it already existed with different SKU, update it
                 if not created:
                     variant_obj.sku = sku[:100]
-                    variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
+                    variant_obj.stock_quantity = random_stock
                     variant_obj.variant_price = int(round(price)) if price is not None else None
                     variant_obj.status = ProductVariant.ACTIVE
                     variant_obj.save()
                     imported_count += 1
-                    self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku})")
+                    self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
                 else:
                     imported_count += 1
-                    self.stdout.write(f"  ✓ Created variant: {color} - {size} (SKU: {sku})")
+                    self.stdout.write(f"  ✓ Created variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
         
         self.stdout.write(self.style.SUCCESS(f"  Imported {imported_count} variant(s) for product {item.sku}"))
 
@@ -393,6 +407,17 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"No images found for product {item.sku}"))
             return
         
+        # Check if main image already exists
+        has_main_image = item.image and hasattr(item.image, 'name') and item.image.name
+        
+        # Check if gallery images exist
+        existing_gallery_count = ItemGallery.objects.filter(itemId=item, status=ItemGallery.ACTIVE).count()
+        
+        # Skip if images already downloaded
+        if has_main_image and existing_gallery_count >= len(images) - 1:
+            self.stdout.write(self.style.SUCCESS(f"Skipping image download for {item.sku} - images already exist (main: {bool(has_main_image)}, gallery: {existing_gallery_count})"))
+            return
+        
         self.stdout.write(f"Downloading {len(images)} image(s) for product {item.sku}...")
         
         for index, image_data in enumerate(images):
@@ -417,13 +442,27 @@ class Command(BaseCommand):
                         file_ext = ext
                 
                 filename = f"zahrarubab_{item.sku}_{index + 1}.{file_ext}"
-                content = ContentFile(response.content)
-
+                
+                # Skip if main image already exists
                 if index == 0:
+                    if has_main_image:
+                        self.stdout.write(f"  ⊘ Skipping main image {index + 1} - already exists")
+                        continue
+                    content = ContentFile(response.content)
                     item.image.save(filename, content, save=True)
                     file_size_kb = len(response.content) / 1024
                     self.stdout.write(self.style.SUCCESS(f"  ✓ Saved main image: {filename} ({file_size_kb:.1f} KB)"))
                 else:
+                    # Check if this gallery image already exists
+                    existing_gallery = ItemGallery.objects.filter(
+                        itemId=item, 
+                        status=ItemGallery.ACTIVE,
+                        image__icontains=f"zahrarubab_{item.sku}_{index + 1}"
+                    ).first()
+                    if existing_gallery:
+                        self.stdout.write(f"  ⊘ Skipping gallery image {index + 1} - already exists")
+                        continue
+                    content = ContentFile(response.content)
                     gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
                     gallery.image.save(filename, content, save=True)
                     file_size_kb = len(response.content) / 1024
@@ -539,8 +578,8 @@ class Command(BaseCommand):
             "wedding festive pret": ["wedding", "festive", "bridal", "occasion wear"],
             "women": ["women", "womens", "female", "ladies"],
             "zircon": ["zircon"],
-            "zardozi - nikkah edit": ["zardozi", "nikkah edit", "zardozi nikkah"],
-            "zardozi - nikkah edit summer": ["zardozi summer", "nikkah edit summer", "zardozi nikkah summer"],
+            "zardozi - nikkah edit": ["zardozi", "nikkah", "nikkah edit", "zardozi nikkah", "zr-", "zr "],
+            "zardozi - nikkah edit summer": ["zardozi summer", "nikkah edit summer", "zardozi nikkah summer", "nikkah summer"],
         }
         
         # Match categories based on keywords
@@ -564,14 +603,22 @@ class Command(BaseCommand):
                 # Check for sale/clearance indicators
                 if any(word in search_text for word in ["sale", "clearance", "discount", "end of season"]):
                     matched = True
+            elif category_name == "zardozi - nikkah edit":
+                # More aggressive matching for Zardozi - match if product has ZR- pattern or zardozi/nikkah keywords
+                if "zr-" in search_text or "zr " in search_text or "zardozi" in search_text or "nikkah" in search_text:
+                    matched = True
             
             if matched:
                 matches.append(category_map[category_name])
         
         # Ensure at least one category is matched (fallback to common categories)
         if not matches:
-            # Default fallback categories
-            fallback_categories = ["women", "all in store"]
+            # Default fallback categories - prioritize Zardozi if product has ZR- pattern
+            if "zr-" in search_text or "zr " in search_text:
+                fallback_categories = ["zardozi - nikkah edit", "women", "all in store"]
+            else:
+                fallback_categories = ["women", "all in store"]
+            
             for fallback in fallback_categories:
                 if fallback in category_map:
                     matches.append(category_map[fallback])
