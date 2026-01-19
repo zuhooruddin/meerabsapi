@@ -230,17 +230,38 @@ class Command(BaseCommand):
             sku = self._ensure_unique_variant_sku(sku, item, variant)
             price = self._to_number(variant.get("price"))
 
-            ProductVariant.objects.get_or_create(
-                item=item,
-                color=color[:50],
-                size=size,
-                defaults={
-                    "sku": sku[:100],
-                    "stock_quantity": variant.get("inventory_quantity") or 0,
-                    "variant_price": int(price) if price is not None else None,
-                    "status": ProductVariant.ACTIVE,
-                },
-            )
+            # Try to get by SKU first (since it's unique)
+            variant_obj = ProductVariant.objects.filter(sku=sku).first()
+            
+            if variant_obj:
+                # Update existing variant
+                variant_obj.item = item
+                variant_obj.color = color[:50]
+                variant_obj.size = size
+                variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
+                variant_obj.variant_price = int(price) if price is not None else None
+                variant_obj.status = ProductVariant.ACTIVE
+                variant_obj.save()
+            else:
+                # Try to get by item, color, size combination
+                variant_obj, created = ProductVariant.objects.get_or_create(
+                    item=item,
+                    color=color[:50],
+                    size=size,
+                    defaults={
+                        "sku": sku[:100],
+                        "stock_quantity": variant.get("inventory_quantity") or 0,
+                        "variant_price": int(price) if price is not None else None,
+                        "status": ProductVariant.ACTIVE,
+                    },
+                )
+                # If it already existed with different SKU, update it
+                if not created:
+                    variant_obj.sku = sku[:100]
+                    variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
+                    variant_obj.variant_price = int(price) if price is not None else None
+                    variant_obj.status = ProductVariant.ACTIVE
+                    variant_obj.save()
 
     def _download_images(self, item, images):
         for index, image_data in enumerate(images):
