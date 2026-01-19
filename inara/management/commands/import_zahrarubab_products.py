@@ -227,6 +227,7 @@ class Command(BaseCommand):
                 color = "Default"
 
             sku = variant.get("sku") or f"ZR-VAR-{variant.get('id')}"
+            sku = self._ensure_unique_variant_sku(sku, item, variant)
             price = self._to_number(variant.get("price"))
 
             ProductVariant.objects.get_or_create(
@@ -309,6 +310,19 @@ class Command(BaseCommand):
             if name in haystack:
                 matches.append(category)
         return matches
+
+    def _ensure_unique_variant_sku(self, sku, item, variant):
+        if not sku:
+            sku = f"ZR-VAR-{variant.get('id')}"
+        existing = ProductVariant.objects.filter(sku=sku).first()
+        if not existing:
+            return sku
+        if existing.item_id == item.id:
+            return sku
+        variant_id = variant.get("id")
+        if variant_id:
+            return f"{sku}-{variant_id}"[:100]
+        return f"{sku}-DUP"[:100]
 
     def _normalize_size(self, size):
         if not size:
