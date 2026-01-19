@@ -23,21 +23,25 @@ class Command(BaseCommand):
         parser.add_argument("--base-url", default="https://zahrarubab.com")
         parser.add_argument("--page-size", type=int, default=250)
         parser.add_argument("--max-pages", type=int, default=0)
-        parser.add_argument("--download-images", action="store_true", help="Download product images (default: True)")
-        parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images")
+        parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images (default: images are downloaded)")
         parser.add_argument("--update-existing", action="store_true")
 
     def handle(self, *args, **options):
         base_url = options["base_url"].rstrip("/")
         page_size = options["page_size"]
         max_pages = options["max_pages"]
-        # Default to True for download_images if not explicitly set
-        download_images = options.get("download_images", True)
-        update_existing = options["update_existing"]
+        # Default to True for download_images unless --no-download-images is used
+        # Check if download_images was explicitly set to False (via --no-download-images)
+        download_images = options.get("download_images")
+        if download_images is None:
+            # Not explicitly set, default to True
+            download_images = True
+        update_existing = options.get("update_existing", False)
 
         main_category = self._get_or_create_main_category()
         category_map = self._get_or_create_target_categories(main_category)
         self.stdout.write(self.style.SUCCESS("Starting import from Zahra Rubab..."))
+        self.stdout.write(f"Download images: {download_images}")
 
         page = 1
         imported = 0
@@ -198,8 +202,13 @@ class Command(BaseCommand):
             )
 
         # Download images if enabled and available
-        if download_images and images:
-            self._download_images(item, images)
+        if download_images:
+            if images:
+                self._download_images(item, images)
+            else:
+                self.stdout.write(self.style.WARNING(f"No images to download for product {item.sku}"))
+        else:
+            self.stdout.write(self.style.WARNING(f"Image downloading is disabled for product {item.sku}"))
 
         self._import_variants(item, product, variants)
         return True
@@ -258,21 +267,35 @@ class Command(BaseCommand):
                     variant_obj.save()
 
     def _download_images(self, item, images):
+        if not images:
+            self.stdout.write(self.style.WARNING(f"No images found for product {item.sku}"))
+            return
+        
+        self.stdout.write(f"Downloading {len(images)} image(s) for product {item.sku}...")
+        
         for index, image_data in enumerate(images):
             url = image_data.get("src")
             if not url:
+                self.stdout.write(self.style.WARNING(f"Skipping image {index + 1} - no URL"))
                 continue
 
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            filename = f"zahrarubab_{item.sku}_{index + 1}.jpg"
-            content = ContentFile(response.content)
+            try:
+                self.stdout.write(f"  Downloading image {index + 1} from {url[:50]}...")
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                filename = f"zahrarubab_{item.sku}_{index + 1}.jpg"
+                content = ContentFile(response.content)
 
-            if index == 0:
-                item.image.save(filename, content, save=True)
-            else:
-                gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
-                gallery.image.save(filename, content, save=True)
+                if index == 0:
+                    item.image.save(filename, content, save=True)
+                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved main image: {filename}"))
+                else:
+                    gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
+                    gallery.image.save(filename, content, save=True)
+                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved gallery image: {filename}"))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"  ✗ Failed to download image {index + 1}: {str(e)}"))
+                continue
 
     def _clean_html(self, html):
         text = re.sub(r"<[^>]+>", " ", html or "")
