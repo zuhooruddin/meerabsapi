@@ -209,61 +209,58 @@ class Command(BaseCommand):
         mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else sale_price
         discount = self._calc_discount(mrp, sale_price)
 
-        # List of specific products to mark as new arrival and featured
-        featured_new_products = [
-            "ZR-2537 | DALIA",
-            "ZR-2434 Grey",
-            "ZR-2305 Bottle Green Chiffon",
-            "ZR-2528 | BURGUNDY",
-            "ZR-2439 BLUE",
-            "ZR-2536 | CRYSTAL",
-            "ZR-2518 | Olive",
-            "ZR-2513 | Asmani Nila",
-            "ZR-2447 | Pista | 3 PC",
-            "ZR-2222 Pink",
-            "3 Piece Stitched - ZR 2120 Gold",
-            "ZR-2117 Skin",
-            "ZR-2331 Skin",
-            "ZR-2349 Black, Mehroon, Peach",
-            "ZR-2344 Green & Skin",
-            "ZR-2357 Magenta & Aqua Dress",
+        # List of specific products to mark as new arrival and featured (by SKU pattern)
+        featured_new_skus = [
+            "ZR-2537",
+            "ZR-2434",
+            "ZR-2305",
+            "ZR-2528",
+            "ZR-2439",
+            "ZR-2536",
+            "ZR-2518",
+            "ZR-2513",
+            "ZR-2447",
+            "ZR-2222",
+            "ZR-2120",  # For "3 Piece Stitched - ZR 2120 Gold"
+            "ZR-2117",
+            "ZR-2331",
+            "ZR-2349",
+            "ZR-2344",
+            "ZR-2357",
             "ZR-2431-A",
             "ZR-2429-A",
             "ZR-2427-A",
-            "ZR-2441 | FEROZA",
-            "ZR-2533 | SAPPHIRE",
-            "ZR-2115 Coffee, Pink, Pista",
-            "ZR-2347 Mustard, Skin",
-            "ZR-2120 Perple",
-            "ZR-2534 | ZIRCON",
+            "ZR-2441",
+            "ZR-2533",
+            "ZR-2115",
+            "ZR-2347",
+            "ZR-2534",
             "ZR-2426-A",
             "ZR-2431-B",
             "ZR-2432-B",
             "ZR-2426-B",
         ]
         
-        # Check if current product matches any of the featured/new products
-        title_upper = title.upper()
+        # Check if current product SKU matches any of the featured/new SKUs
+        item_sku_upper = item_sku.upper()
         is_featured_product = False
         
-        # Check by exact title match or by SKU pattern
-        for featured_product in featured_new_products:
-            featured_upper = featured_product.upper()
-            # Check if title contains the featured product identifier
-            if featured_upper in title_upper or title_upper in featured_upper:
+        # Check by SKU - match if item SKU starts with or contains the featured SKU
+        for featured_sku in featured_new_skus:
+            featured_sku_upper = featured_sku.upper()
+            # Check if item SKU matches the featured SKU (exact match or starts with)
+            if item_sku_upper == featured_sku_upper or item_sku_upper.startswith(featured_sku_upper + "-") or item_sku_upper.startswith(featured_sku_upper + " "):
                 is_featured_product = True
                 break
-        
-        # Also check by SKU if title doesn't match
-        if not is_featured_product:
-            for featured_product in featured_new_products:
-                # Extract SKU pattern (e.g., "ZR-2537" from "ZR-2537 | DALIA")
-                sku_pattern = featured_product.split()[0].upper() if featured_product.split() else ""
-                if sku_pattern and sku_pattern in item_sku.upper():
+            # Also check if featured SKU is in item SKU (for cases like ZR-2431-A matching ZR-2431-A-B)
+            if featured_sku_upper in item_sku_upper:
+                # Make sure it's not a partial match (e.g., ZR-243 should not match ZR-2431)
+                if len(featured_sku_upper) >= 6:  # At least "ZR-XXX" format
                     is_featured_product = True
                     break
         
         # Only assign isNewArrival and isFeatured to matching products
+        # Explicitly set to 0 for all other products
         is_new = 1 if is_featured_product else 0
         is_featured = 1 if is_featured_product else 0
         
@@ -271,6 +268,10 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"  → Marked as NEW ARRIVAL: {item_sku} ({title[:50]})"))
         if is_featured:
             self.stdout.write(self.style.SUCCESS(f"  → Marked as FEATURED: {item_sku} ({title[:50]})"))
+        if not is_featured_product and existing:
+            # Log when removing from featured/new for existing products
+            if existing.isNewArrival == 1 or existing.isFeatured == 1:
+                self.stdout.write(self.style.WARNING(f"  → Removed from NEW ARRIVAL/FEATURED: {item_sku}"))
         
         item_values = {
             "name": title[:150] or "Zahra Rubab Product",
