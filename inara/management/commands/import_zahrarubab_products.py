@@ -25,6 +25,7 @@ class Command(BaseCommand):
         parser.add_argument("--max-pages", type=int, default=0)
         parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images (default: images are downloaded)")
         parser.add_argument("--update-existing", action="store_true")
+        parser.add_argument("--exchange-rate", type=float, default=0.92, help="Exchange rate to convert prices to Euro (default: 0.92 for USD to EUR)")
 
     def handle(self, *args, **options):
         base_url = options["base_url"].rstrip("/")
@@ -37,6 +38,9 @@ class Command(BaseCommand):
             # Not explicitly set, default to True
             download_images = True
         update_existing = options.get("update_existing", False)
+        exchange_rate = options.get("exchange_rate", 0.92)
+        
+        self.stdout.write(f"Using exchange rate: {exchange_rate} (1 source currency = {exchange_rate} EUR)")
 
         main_category = self._get_or_create_main_category()
         category_map = self._get_or_create_target_categories(main_category)
@@ -62,6 +66,7 @@ class Command(BaseCommand):
                     category_map=category_map,
                     download_images=download_images,
                     update_existing=update_existing,
+                    exchange_rate=exchange_rate,
                 )
                 if result:
                     imported += 1
@@ -115,9 +120,9 @@ class Command(BaseCommand):
     def _get_or_create_target_categories(self, parent):
         target_names = [
             "Zardozi - Nikkah Edit",
+            "Silk",
             "Zardozi - Nikkah Edit Summer",
             "FORMALS",
-            "All IN STORE",
         ]
         categories = {}
         for name in target_names:
@@ -137,7 +142,7 @@ class Command(BaseCommand):
             categories[name.lower()] = category
         return categories
 
-    def _import_product(self, product, main_category, category_map, download_images, update_existing):
+    def _import_product(self, product, main_category, category_map, download_images, update_existing, exchange_rate=0.92):
         title = product.get("title") or ""
         handle = product.get("handle") or ""
         vendor = product.get("vendor") or ""
@@ -161,8 +166,10 @@ class Command(BaseCommand):
             if v.get("compare_at_price")
         ]
 
-        sale_price = int(min(prices)) if prices else None
-        mrp = int(max(compare_prices)) if compare_prices else sale_price
+        # Convert prices to Euro
+        sale_price = int(round(min(prices) * exchange_rate)) if prices else None
+        mrp_raw = max(compare_prices) if compare_prices else (min(prices) if prices else None)
+        mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else sale_price
         discount = self._calc_discount(mrp, sale_price)
 
         item_values = {
@@ -210,10 +217,10 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING(f"Image downloading is disabled for product {item.sku}"))
 
-        self._import_variants(item, product, variants)
+        self._import_variants(item, product, variants, exchange_rate)
         return True
 
-    def _import_variants(self, item, product, variants):
+    def _import_variants(self, item, product, variants, exchange_rate=0.92):
         options = product.get("options") or []
         option_names = {opt.get("name", "").lower(): opt.get("position") for opt in options}
 
@@ -231,7 +238,9 @@ class Command(BaseCommand):
 
             sku = variant.get("sku") or f"ZR-VAR-{variant.get('id')}"
             sku = self._ensure_unique_variant_sku(sku, item, variant)
-            price = self._to_number(variant.get("price"))
+            price_raw = self._to_number(variant.get("price"))
+            # Convert price to Euro
+            price = price_raw * exchange_rate if price_raw is not None else None
 
             # Try to get by SKU first (since it's unique)
             variant_obj = ProductVariant.objects.filter(sku=sku).first()
@@ -242,7 +251,7 @@ class Command(BaseCommand):
                 variant_obj.color = color[:50]
                 variant_obj.size = size
                 variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
-                variant_obj.variant_price = int(price) if price is not None else None
+                variant_obj.variant_price = int(round(price)) if price is not None else None
                 variant_obj.status = ProductVariant.ACTIVE
                 variant_obj.save()
             else:
@@ -254,7 +263,7 @@ class Command(BaseCommand):
                     defaults={
                         "sku": sku[:100],
                         "stock_quantity": variant.get("inventory_quantity") or 0,
-                        "variant_price": int(price) if price is not None else None,
+                        "variant_price": int(round(price)) if price is not None else None,
                         "status": ProductVariant.ACTIVE,
                     },
                 )
@@ -262,7 +271,7 @@ class Command(BaseCommand):
                 if not created:
                     variant_obj.sku = sku[:100]
                     variant_obj.stock_quantity = variant.get("inventory_quantity") or 0
-                    variant_obj.variant_price = int(price) if price is not None else None
+                    variant_obj.variant_price = int(round(price)) if price is not None else None
                     variant_obj.status = ProductVariant.ACTIVE
                     variant_obj.save()
 
