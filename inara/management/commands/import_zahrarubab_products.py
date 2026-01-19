@@ -300,7 +300,8 @@ class Command(BaseCommand):
         return None
 
     def _match_categories(self, title, tags, product_type, category_map):
-        haystack = " ".join([title or "", tags or "", product_type or ""]).lower()
+        tags_text = ", ".join(tags) if isinstance(tags, list) else (tags or "")
+        haystack = " ".join([title or "", tags_text, product_type or ""]).lower()
         matches = []
         for name, category in category_map.items():
             if name == "all in store":
