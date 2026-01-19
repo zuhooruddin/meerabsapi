@@ -23,14 +23,16 @@ class Command(BaseCommand):
         parser.add_argument("--base-url", default="https://zahrarubab.com")
         parser.add_argument("--page-size", type=int, default=250)
         parser.add_argument("--max-pages", type=int, default=0)
-        parser.add_argument("--download-images", action="store_true")
+        parser.add_argument("--download-images", action="store_true", help="Download product images (default: True)")
+        parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images")
         parser.add_argument("--update-existing", action="store_true")
 
     def handle(self, *args, **options):
         base_url = options["base_url"].rstrip("/")
         page_size = options["page_size"]
         max_pages = options["max_pages"]
-        download_images = options["download_images"]
+        # Default to True for download_images if not explicitly set
+        download_images = options.get("download_images", True)
         update_existing = options["update_existing"]
 
         main_category = self._get_or_create_main_category()
@@ -185,17 +187,8 @@ class Command(BaseCommand):
         else:
             item = Item.objects.create(**item_values)
 
-        matched_categories = self._match_categories(
-            title=title,
-            tags=tags,
-            product_type=product.get("product_type") or "",
-            category_map=category_map,
-        )
-        if not matched_categories:
-            matched_categories = [category_map["all in store"]]
-
-        if category_map.get("all in store") not in matched_categories:
-            matched_categories.append(category_map["all in store"])
+        # Add product to ALL target categories
+        matched_categories = list(category_map.values())
 
         for category in matched_categories:
             CategoryItem.objects.get_or_create(
@@ -204,6 +197,7 @@ class Command(BaseCommand):
                 defaults={"level": 2, "status": CategoryItem.ACTIVE},
             )
 
+        # Download images if enabled and available
         if download_images and images:
             self._download_images(item, images)
 
