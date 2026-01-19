@@ -5,6 +5,7 @@ Run: python manage.py import_zahrarubab_products
 from decimal import Decimal
 import re
 import time
+import random
 from urllib.parse import urljoin
 
 import requests
@@ -123,6 +124,7 @@ class Command(BaseCommand):
             "Silk",
             "Zardozi - Nikkah Edit Summer",
             "FORMALS",
+            "Lawn",
         ]
         categories = {}
         for name in target_names:
@@ -172,6 +174,15 @@ class Command(BaseCommand):
         mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else sale_price
         discount = self._calc_discount(mrp, sale_price)
 
+        # Randomly assign isNewArrival and isFeatured (30% chance for each)
+        is_new = 1 if random.random() < 0.3 else 0
+        is_featured = 1 if random.random() < 0.3 else 0
+        
+        if is_new:
+            self.stdout.write(f"  → Marked as NEW ARRIVAL: {item_sku}")
+        if is_featured:
+            self.stdout.write(f"  → Marked as FEATURED: {item_sku}")
+        
         item_values = {
             "name": title[:150] or "Zahra Rubab Product",
             "slug": slug,
@@ -188,6 +199,8 @@ class Command(BaseCommand):
             "metaTitle": title[:150] or None,
             "metaDescription": description[:150] or None,
             "timestamp": timezone.now(),
+            "isNewArrival": is_new,
+            "isFeatured": is_featured,
         }
 
         if existing:
@@ -200,8 +213,29 @@ class Command(BaseCommand):
 
         # Add product to ALL target categories
         matched_categories = list(category_map.values())
+        
+        # Check if product should be added to Lawn category based on title/tags
+        title_lower = title.lower()
+        tags_text = ", ".join(tags) if isinstance(tags, list) else (tags or "")
+        tags_lower = tags_text.lower()
+        search_text = f"{title_lower} {tags_lower}"
+        
+        # Add to Lawn if title/tags contain lawn-related keywords
+        lawn_keywords = ["lawn", "lawn suit", "lawn collection", "summer lawn"]
+        should_add_to_lawn = any(keyword in search_text for keyword in lawn_keywords)
+        
+        # If not matched by keywords, randomly add 20% of products to Lawn
+        if not should_add_to_lawn:
+            should_add_to_lawn = random.random() < 0.2
+        
+        if should_add_to_lawn:
+            self.stdout.write(f"  → Added to LAWN category: {item_sku}")
 
         for category in matched_categories:
+            # Skip Lawn category if product doesn't match criteria
+            if category.name.lower() == "lawn" and not should_add_to_lawn:
+                continue
+                
             CategoryItem.objects.get_or_create(
                 categoryId=category,
                 itemId=item,
@@ -223,6 +257,13 @@ class Command(BaseCommand):
     def _import_variants(self, item, product, variants, exchange_rate=0.92):
         options = product.get("options") or []
         option_names = {opt.get("name", "").lower(): opt.get("position") for opt in options}
+        
+        if not variants:
+            self.stdout.write(self.style.WARNING(f"No variants found for product {item.sku}"))
+            return
+        
+        self.stdout.write(f"Importing {len(variants)} variant(s) for product {item.sku}...")
+        imported_count = 0
 
         for variant in variants:
             color = self._get_option_value(variant, option_names, ["color", "colour"])
@@ -254,6 +295,8 @@ class Command(BaseCommand):
                 variant_obj.variant_price = int(round(price)) if price is not None else None
                 variant_obj.status = ProductVariant.ACTIVE
                 variant_obj.save()
+                imported_count += 1
+                self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku})")
             else:
                 # Try to get by item, color, size combination
                 variant_obj, created = ProductVariant.objects.get_or_create(
@@ -261,6 +304,7 @@ class Command(BaseCommand):
                     color=color[:50],
                     size=size,
                     defaults={
+
                         "sku": sku[:100],
                         "stock_quantity": variant.get("inventory_quantity") or 0,
                         "variant_price": int(round(price)) if price is not None else None,
@@ -274,6 +318,13 @@ class Command(BaseCommand):
                     variant_obj.variant_price = int(round(price)) if price is not None else None
                     variant_obj.status = ProductVariant.ACTIVE
                     variant_obj.save()
+                    imported_count += 1
+                    self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku})")
+                else:
+                    imported_count += 1
+                    self.stdout.write(f"  ✓ Created variant: {color} - {size} (SKU: {sku})")
+        
+        self.stdout.write(self.style.SUCCESS(f"  Imported {imported_count} variant(s) for product {item.sku}"))
 
     def _download_images(self, item, images):
         if not images:
