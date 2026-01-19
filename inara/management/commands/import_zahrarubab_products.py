@@ -34,6 +34,7 @@ class Command(BaseCommand):
         update_existing = options["update_existing"]
 
         main_category = self._get_or_create_main_category()
+        category_map = self._get_or_create_target_categories(main_category)
         self.stdout.write(self.style.SUCCESS("Starting import from Zahra Rubab..."))
 
         page = 1
@@ -52,6 +53,7 @@ class Command(BaseCommand):
                 result = self._import_product(
                     product,
                     main_category=main_category,
+                    category_map=category_map,
                     download_images=download_images,
                     update_existing=update_existing,
                 )
@@ -104,14 +106,39 @@ class Command(BaseCommand):
         )
         return category
 
-    def _import_product(self, product, main_category, download_images, update_existing):
+    def _get_or_create_target_categories(self, parent):
+        target_names = [
+            "Zardozi ? Nikkah Edit",
+            "Zardozi ? Nikkah Edit Summer",
+            "FORMALS",
+            "All IN STORE",
+        ]
+        categories = {}
+        for name in target_names:
+            slug = slugify(name)[:150] or "zahrarubab-uncategorized"
+            category, _ = Category.objects.get_or_create(
+                slug=slug,
+                defaults={
+                    "name": name,
+                    "description": f"Imported products for {name}",
+                    "parentId": parent,
+                    "status": Category.ACTIVE,
+                    "appliesOnline": 1,
+                    "showAtHome": 0,
+                    "priority": 10,
+                },
+            )
+            categories[name.lower()] = category
+        return categories
+
+    def _import_product(self, product, main_category, category_map, download_images, update_existing):
         title = product.get("title") or ""
         handle = product.get("handle") or ""
-        product_type = product.get("product_type") or "Uncategorized"
         vendor = product.get("vendor") or ""
         body_html = product.get("body_html") or ""
         images = product.get("images") or []
         variants = product.get("variants") or []
+        tags = product.get("tags") or ""
 
         description = self._clean_html(body_html)
         slug = self._unique_slug(handle or title, product.get("id"))
@@ -158,12 +185,24 @@ class Command(BaseCommand):
         else:
             item = Item.objects.create(**item_values)
 
-        subcategory = self._get_or_create_subcategory(product_type, main_category)
-        CategoryItem.objects.get_or_create(
-            categoryId=subcategory,
-            itemId=item,
-            defaults={"level": 2, "status": CategoryItem.ACTIVE},
+        matched_categories = self._match_categories(
+            title=title,
+            tags=tags,
+            product_type=product.get("product_type") or "",
+            category_map=category_map,
         )
+        if not matched_categories:
+            matched_categories = [category_map["all in store"]]
+
+        if category_map.get("all in store") not in matched_categories:
+            matched_categories.append(category_map["all in store"])
+
+        for category in matched_categories:
+            CategoryItem.objects.get_or_create(
+                categoryId=category,
+                itemId=item,
+                defaults={"level": 2, "status": CategoryItem.ACTIVE},
+            )
 
         if download_images and images:
             self._download_images(item, images)
@@ -259,6 +298,16 @@ class Command(BaseCommand):
                 if value:
                     return value
         return None
+
+    def _match_categories(self, title, tags, product_type, category_map):
+        haystack = " \".join([title or \"\, tags or \"\, product_type or \"\]).lower()
+        matches = []
+        for name, category in category_map.items():
+            if name == "all in store":
+                continue
+            if name in haystack:
+                matches.append(category)
+        return matches
 
     def _normalize_size(self, size):
         if not size:
