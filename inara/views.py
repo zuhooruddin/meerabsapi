@@ -2510,7 +2510,7 @@ def getOrderSentToPosDetails(request):
             orderDetailList = {'rowNo':index+1,'itemId':record['itemSku'],'itemName':record['itemName'],'itemReferenceCode':record['itemSku'],'salePrice':str(record['salePrice']),'quantity':record['itemQty'],'itemAmount':str(record['mrp']),'taxPercentage':0.0}
             child.append(orderDetailList)
         returnList['salesOrder']['orderItems'] = child
-        r=requests.post("https://722157.true-order.com/WebReporter/api/v1/salesOrders",data = json.dumps(returnList), headers={"X-Auth-Token":"9BAA1E819AD48254DFF928F5012BBD95585D2E068EC93AED4DA0810AC0D649BE35F51CE2432EA204"})
+        r=requests.post("https://72215227.true-order.com/WebReporter/api/v1/salesOrders",data = json.dumps(returnList), headers={"X-Auth-Token":"9BAA1E819AD48254DFF928F5012BBD95585D2E068EC93AED4DA0810AC0D649BE35F51CE2432EA204"})
         json_data = r.json()
         if 'result' in json_data:
             if(json_data['result']['status'] == "success"):
@@ -3064,7 +3064,7 @@ from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 def get_all_website_paginated_item(request):
     # print(request)
     search = request.GET.get('search', '')
-    search = search.replace("-", " ")
+    search = search.replace("-", " ").strip()  # Strip whitespace to properly detect empty search
     page = request.GET.get('page', 1)
     data = {}
     page_size = request.GET.get('pageSize', 9)
@@ -3072,12 +3072,30 @@ def get_all_website_paginated_item(request):
     logger.info("Product Query: %s" % (search))
     
     try:
+        # CRITICAL FIX: If search is empty, return empty results instead of all products
+        if not search or len(search.strip()) == 0:
+            data = {
+                'results': [],
+                'count': 0
+            }
+            return Response(data)
+        
         vector = SearchVector('name', 'author', 'manufacturer')
         query = SearchQuery(search)
         words = search.split()
         condition = Q()
         for word in words:
-            condition &= Q(name__icontains=word)
+            if word.strip():  # Only add non-empty words
+                condition &= Q(name__icontains=word)
+        
+        # If no valid words after filtering, return empty results
+        if not words or not any(word.strip() for word in words):
+            data = {
+                'results': [],
+                'count': 0
+            }
+            return Response(data)
+        
         # Get the items that match the search query
         # searched_items = Item.objects.annotate(rank=SearchRank(vector, query)).filter(
         #     condition,
@@ -3094,7 +3112,7 @@ def get_all_website_paginated_item(request):
             ),
             rank2=Case(
                 When(condition, then=SearchRank(vector, query)),
-                default=Value(0.7),
+                default=Value(0.3),  # Changed from 0.7 to 0 to prevent matching all products when condition is false
                 output_field=models.FloatField(),
             ),
             similarity=Case(
