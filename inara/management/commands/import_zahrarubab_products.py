@@ -204,10 +204,30 @@ class Command(BaseCommand):
         ]
 
         # Convert prices to Euro
-        sale_price = int(round(min(prices) * exchange_rate)) if prices else None
+        # MRP is the base/regular price (use compare_at_price if available, otherwise use price)
         mrp_raw = max(compare_prices) if compare_prices else (min(prices) if prices else None)
-        mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else sale_price
-        discount = self._calc_discount(mrp, sale_price)
+        mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else None
+        
+        # Calculate discount percentage if compare_at_price exists and is higher than price
+        if compare_prices and prices:
+            min_price = min(prices)
+            max_compare = max(compare_prices)
+            # Convert to Euro for comparison
+            min_price_eur = int(round(min_price * exchange_rate))
+            max_compare_eur = int(round(max_compare * exchange_rate))
+            
+            if max_compare_eur > min_price_eur:
+                # There's a discount - calculate percentage
+                discount = self._calc_discount(max_compare_eur, min_price_eur)
+            else:
+                discount = 0
+        else:
+            discount = 0
+        
+        # Sale Price should always equal MRP (they are the same)
+        # The discount field differentiates whether it's discounted or not
+        # Frontend will calculate: actual_sale_price = mrp - (mrp * discount / 100)
+        sale_price = mrp
 
         # List of specific products to mark as new arrival and featured (by SKU pattern)
         featured_new_skus = [
