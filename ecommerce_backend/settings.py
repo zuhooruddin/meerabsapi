@@ -26,7 +26,7 @@ LOGS_DIR = os.path.join(BASE_DIR, 'sys/logs')
 SECRET_KEY = 'django-insecure-f$rybd7or=4vavz%ayb+q3s734&!sd2gy-+ogo&)=ush6_uzj+'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'  # Set via environment variable
 
 ALLOWED_HOSTS = ['100.64.6.105','localhost:3001','meerabs.com','api.meerabs.com','admin.meerabs.com','www.meerabs.com','localhost','127.0.0.1','idrisbookbank-dev.inara.tech','idrisbookbank-dev-server.inara.tech']
 
@@ -203,6 +203,11 @@ DATABASES = {
         'PASSWORD': 'MeerabsSecure2026!',
         'HOST': 'localhost',
         'PORT': '5432',
+        'CONN_MAX_AGE': 600,  # Connection pooling - reuse connections for 10 minutes
+        'OPTIONS': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000'  # 30 second query timeout
+        },
     }
 
 }
@@ -327,6 +332,29 @@ task_serializer = 'json'
 result_serializer = 'json'
 timezone = 'Asia/Karachi'
 
+# Caching configuration - Use database cache as fallback (can be upgraded to Redis)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'cache_table',
+        'TIMEOUT': 300,  # 5 minutes default timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,
+        }
+    }
+}
+
+# For production, use Redis instead:
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+#         'LOCATION': 'redis://127.0.0.1:6379/1',
+#         'OPTIONS': {
+#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+#         }
+#     }
+# }
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -339,7 +367,7 @@ LOGGING = {
     },
     'handlers': {
         'file': {
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',  # Only DEBUG in development
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'idris.log'),
             'backupCount': 90,
@@ -347,7 +375,7 @@ LOGGING = {
             'formatter': 'simple'
         },
         'celeryFile': {
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'celery.log'),
             'backupCount': 90,
@@ -355,7 +383,7 @@ LOGGING = {
             'formatter': 'simple'
         },
         'categorySync': {
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'categorySync.log'),
             'backupCount': 90,
@@ -363,7 +391,7 @@ LOGGING = {
             'formatter': 'simple'
         },
         'itemSync': {
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(LOGS_DIR, 'itemSync.log'),
             'backupCount': 90,
@@ -374,13 +402,18 @@ LOGGING = {
     'loggers': {
         'inara': {
             'handlers': ['file'],
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': True,
         },
         'ecommerce_backend': {
             'handlers': ['celeryFile'],
-            'level': 'DEBUG',
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': True,
+        },
+        'django.db.backends': {
+            'handlers': ['file'],
+            'level': 'WARNING',  # Only log slow queries, not all queries
+            'propagate': False,
         },
     },
 }

@@ -977,7 +977,8 @@ def getItemDetail(request):
     slug = request.data['slug']
     publisherFlag = False
     try:
-        itemObject = Item.objects.get(slug=slug)
+        # Optimize query with select_related for foreign keys and prefetch_related for reverse relations
+        itemObject = Item.objects.select_related().prefetch_related('variants').get(slug=slug)
         categoryList = list(CategoryItem.objects.filter(itemId=itemObject,status=CategoryItem.ACTIVE).values_list("categoryId",flat=True))
        
         categoriesObj = Category.objects.filter(id__in=categoryList)
@@ -1032,7 +1033,8 @@ def getItemDetailWithVariants(request):
     slug = request.GET.get('slug', '')
     
     try:
-        itemObject = Item.objects.get(slug=slug, status=Item.ACTIVE)
+        # Optimize query with prefetch_related for variants and gallery
+        itemObject = Item.objects.prefetch_related('variants').get(slug=slug, status=Item.ACTIVE)
         
         # Use ItemWithVariantsSerializer to get product with variants
         from inara.serializers import ItemWithVariantsSerializer
@@ -1046,7 +1048,7 @@ def getItemDetailWithVariants(request):
         if itemObject.image:
             galleryImages.append(itemObject.image.url)
         
-        # Get all active gallery images
+        # Get all active gallery images - optimized query
         galleryObject = ItemGallery.objects.filter(itemId=itemObject.pk, status=ItemGallery.ACTIVE).order_by('id')
         for gallery_item in galleryObject:
             if gallery_item.image:
@@ -2717,11 +2719,23 @@ def getItemSearchCategory(request):
 
 
 def getAllSectionSequence(request):
-    itemObject = {}
-    try:
-        itemObject = list(SectionSequence.objects.values())
-    except Exception as e:
+    from django.core.cache import cache
+    # Cache this endpoint for 10 minutes as it's called frequently and rarely changes
+    cache_key = 'all_section_sequence'
+    itemObject = cache.get(cache_key)
+    
+    if itemObject is None:
+        try:
+            # Optimize query with select_related for foreign keys
+            itemObject = list(SectionSequence.objects.select_related(
+                'category', 'child1', 'child2', 'child3', 'child4', 
+                'child5', 'child6', 'child7', 'child8'
+            ).values())
+            cache.set(cache_key, itemObject, 600)  # Cache for 10 minutes
+        except Exception as e:
             logger.error("Exception in getAllSectionSequence: %s " %(str(e)))
+            itemObject = []
+    
     return JsonResponse(itemObject, safe=False)
 
 @api_view(['GET', 'POST'])
@@ -4566,10 +4580,19 @@ def addSiteSetting(request):
 # @is_admin
 @csrf_exempt
 def getGeneralSetting(request):
-    try:
-        generalObject = list(SiteSettings.objects.values())
-    except Exception as e:
-        logger.error("Exception in getsliderimage: %s " %(str(e)))
+    from django.core.cache import cache
+    # Cache this endpoint for 5 minutes as it's called frequently and rarely changes
+    cache_key = 'general_settings'
+    generalObject = cache.get(cache_key)
+    
+    if generalObject is None:
+        try:
+            generalObject = list(SiteSettings.objects.values())
+            cache.set(cache_key, generalObject, 300)  # Cache for 5 minutes
+        except Exception as e:
+            logger.error("Exception in getGeneralSetting: %s " %(str(e)))
+            generalObject = []
+    
     return JsonResponse(generalObject, safe=False)
     
 @api_view(['GET', 'POST'])

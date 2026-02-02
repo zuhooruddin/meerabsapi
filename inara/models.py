@@ -173,6 +173,12 @@ class Category(models.Model):
 
     class Meta:
         db_table = "categories"
+        indexes = [
+            models.Index(fields=['slug'], name='category_slug_idx'),
+            models.Index(fields=['status', 'appliesOnline'], name='category_status_applies_idx'),
+            models.Index(fields=['parentId', 'status'], name='category_parent_status_idx'),
+            models.Index(fields=['isBrand', 'status'], name='category_brand_status_idx'),
+        ]
     
     # def AddCategory1(categoryExtPosId, parentId, name, categoryDescription, appliesOnline, syncTs, lovSequence, catStatus,posStatus):
     #     try:
@@ -271,6 +277,13 @@ class Item(models.Model):
 
     class Meta:
         db_table = "item"
+        indexes = [
+            models.Index(fields=['slug'], name='item_slug_idx'),
+            models.Index(fields=['status', 'appliesOnline'], name='item_status_applies_idx'),
+            models.Index(fields=['isFeatured'], name='item_featured_idx'),
+            models.Index(fields=['isNewArrival'], name='item_new_arrival_idx'),
+            models.Index(fields=['status', 'isFeatured', 'isNewArrival'], name='item_status_featured_new_idx'),
+        ]
     
     def AddItem(mapping):
         obj = Item()
@@ -415,6 +428,11 @@ class CategoryItem(models.Model):
 
     class Meta:
         db_table = "category_item"
+        indexes = [
+            models.Index(fields=['categoryId', 'status'], name='cat_item_category_status_idx'),
+            models.Index(fields=['itemId', 'status'], name='cat_item_item_status_idx'),
+            models.Index(fields=['categoryId', 'itemId', 'status'], name='cat_item_composite_idx'),
+        ]
 
 
 ############### Category & Item Sync Track Progress Model #################
