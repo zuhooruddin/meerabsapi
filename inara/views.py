@@ -3028,7 +3028,9 @@ class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
     def get_queryset(self):
         itemObject = {}
         try:
-            itemObject = Item.objects.filter(appliesOnline=1,status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
+            # Removed appliesOnline filter to show all active products
+            # Products should be filtered by status=ACTIVE only
+            itemObject = Item.objects.filter(status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
         except Exception as e:
             logger.error("Exception in getAllWebsitePaginatedItem: %s " %(str(e)))
         return itemObject
