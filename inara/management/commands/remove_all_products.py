@@ -88,6 +88,20 @@ class Command(BaseCommand):
             if not dry_run:
                 self.stdout.write('\nRemoving related data...')
                 
+                # Handle OrderDescription first (PROTECT relationship with ProductVariant)
+                if order_descriptions_count > 0:
+                    if keep_orders:
+                        # Mark as deleted but keep for history, and set variant to NULL
+                        OrderDescription.objects.filter(variant_id__in=variant_ids).update(
+                            isDeleted=True,
+                            variant=None
+                        )
+                        self.stdout.write(self.style.SUCCESS(f'  ✓ Marked {order_descriptions_count} order descriptions as deleted (kept for history, variant set to NULL)'))
+                    else:
+                        # Set variant to NULL to break the PROTECT relationship, then we can delete variants
+                        OrderDescription.objects.filter(variant_id__in=variant_ids).update(variant=None)
+                        self.stdout.write(self.style.SUCCESS(f'  ✓ Removed variant references from {order_descriptions_count} order descriptions'))
+                
                 # Delete/soft-delete related data
                 # Note: ProductVariant has CASCADE, so it will be deleted automatically when items are deleted
                 # But we'll handle it explicitly for soft-delete option
@@ -95,7 +109,7 @@ class Command(BaseCommand):
                     if soft_delete:
                         ProductVariant.objects.filter(item_id__in=item_ids).update(status=ProductVariant.DELETED)
                     else:
-                        # CASCADE will handle this, but delete explicitly for clarity
+                        # Now we can delete variants since OrderDescription references are set to NULL
                         ProductVariant.objects.filter(item_id__in=item_ids).delete()
                     self.stdout.write(self.style.SUCCESS(f'  ✓ Processed {variants_count} product variants'))
                 
@@ -140,19 +154,6 @@ class Command(BaseCommand):
                         ItemTags.objects.filter(itemId_id__in=item_ids).delete()
                     self.stdout.write(self.style.SUCCESS(f'  ✓ Removed {tags_count} item tags'))
                 
-                if order_descriptions_count > 0:
-                    if keep_orders:
-                        # Mark order descriptions as deleted but keep them for history
-                        OrderDescription.objects.filter(variant_id__in=variant_ids).update(isDeleted=True)
-                        self.stdout.write(self.style.SUCCESS(f'  ✓ Marked {order_descriptions_count} order descriptions as deleted (kept for history)'))
-                    else:
-                        # Note: OrderDescription has PROTECT, so we can't delete if there are active orders
-                        # We'll try to mark as deleted
-                        try:
-                            OrderDescription.objects.filter(variant_id__in=variant_ids).update(isDeleted=True)
-                            self.stdout.write(self.style.SUCCESS(f'  ✓ Marked {order_descriptions_count} order descriptions as deleted'))
-                        except Exception as e:
-                            self.stdout.write(self.style.WARNING(f'  ⚠ Could not update order descriptions: {e}'))
                 
                 # Delete or soft-delete items
                 self.stdout.write(f'\nRemoving {item_count} products...')
