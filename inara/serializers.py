@@ -250,6 +250,7 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'sku', 'image', 'description', 
             'brand', 'product_category', 'base_price', 'discount_price',
             'is_active', 'status', 'mrp', 'salePrice', 'discount',
+            'stock', 'appliesOnline',
             'metaUrl', 'metaTitle', 'metaDescription', 'isFeatured',
             'isNewArrival', 'variants', 'available_colors', 'available_sizes',
             'price_range', 'gallery', 'imgGroup'
