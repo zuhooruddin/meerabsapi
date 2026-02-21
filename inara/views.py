@@ -175,6 +175,11 @@ class DropdownResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+class WebsiteResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+
 ###### Pagination Setup End ########
 def class_for_name(module_name, class_name):
     # load the module, will raise ImportError if module cannot be loaded
@@ -3014,7 +3019,7 @@ def registerUser(request):
 @permission_classes((AllowAny,))
 class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
     serializer_class = ItemSerializer  # Default, but we'll override in get_serializer_class
-    pagination_class = AdminResultsSetPagination
+    pagination_class = WebsiteResultsSetPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'slug','sku','author','isbn','manufacturer']
 
@@ -3027,12 +3032,12 @@ class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
             return ItemSerializer
 
     def get_queryset(self):
-        itemObject = {}
         try:
             itemObject = Item.objects.filter(appliesOnline=1,status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
+            return itemObject
         except Exception as e:
             logger.error("Exception in getAllWebsitePaginatedItem: %s " %(str(e)))
-        return itemObject
+            return Item.objects.none()
 
 from django.core.paginator import Paginator
 from rest_framework.decorators import api_view
