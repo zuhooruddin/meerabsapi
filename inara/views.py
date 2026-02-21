@@ -3011,7 +3011,11 @@ def registerUser(request):
 
 
 @permission_classes((AllowAny,))
-class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
+class getAllWebsitePaginatedItem(generics.ListAPIView):
+    """
+    Get all website products with pagination.
+    Returns active products ordered by newArrivalTill, isFeatured, and stock.
+    """
     serializer_class = ItemSerializer  # Default, but we'll override in get_serializer_class
     pagination_class = AdminResultsSetPagination
     filter_backends = [filters.SearchFilter]
@@ -3026,14 +3030,15 @@ class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
             return ItemSerializer
 
     def get_queryset(self):
-        itemObject = {}
         try:
             # Removed appliesOnline filter to show all active products
             # Products should be filtered by status=ACTIVE only
             itemObject = Item.objects.filter(status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
+            return itemObject
         except Exception as e:
             logger.error("Exception in getAllWebsitePaginatedItem: %s " %(str(e)))
-        return itemObject
+            # Return empty queryset instead of empty dict
+            return Item.objects.none()
 
 from django.core.paginator import Paginator
 from rest_framework.decorators import api_view
