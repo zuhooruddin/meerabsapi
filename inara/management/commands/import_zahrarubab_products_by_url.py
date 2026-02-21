@@ -1,12 +1,12 @@
 """
-Import products from zahrarubab.com (Shopify) into the Item and Category tables.
-Run: python manage.py import_zahrarubab_products
+Import specific products from zahrarubab.com by URL and mark them as featured and new arrival.
+Run: python manage.py import_zahrarubab_products_by_url --urls "url1,url2,url3"
 """
 from decimal import Decimal
 import re
 import time
 import random
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse, urljoin
 
 import requests
 from django.core.files.base import ContentFile
@@ -18,49 +18,85 @@ from inara.models import Category, CategoryItem, Item, ItemGallery, ProductVaria
 
 
 class Command(BaseCommand):
-    help = "Import products from zahrarubab.com (Shopify) into the database."
+    help = "Import specific products from zahrarubab.com by URL and mark as featured/new arrival."
 
     def add_arguments(self, parser):
-        parser.add_argument("--base-url", default="https://zahrarubab.com")
-        parser.add_argument("--page-size", type=int, default=250)
-        parser.add_argument("--max-pages", type=int, default=0)
-        parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images (default: images are downloaded)")
-        parser.add_argument("--update-existing", action="store_true")
-        parser.add_argument("--exchange-rate", type=float, default=0.92, help="Exchange rate to convert prices to Euro (default: 0.92 for USD to EUR)")
+        parser.add_argument(
+            "--urls",
+            type=str,
+            required=True,
+            help='Comma-separated list of product URLs (e.g., "url1,url2,url3")',
+        )
+        parser.add_argument(
+            "--base-url",
+            default="https://zahrarubab.com",
+            help="Base URL for the Shopify store",
+        )
+        parser.add_argument(
+            "--no-download-images",
+            dest="download_images",
+            action="store_false",
+            help="Skip downloading images (default: images are downloaded)",
+        )
+        parser.add_argument(
+            "--update-existing",
+            action="store_true",
+            help="Update existing products instead of skipping",
+        )
+        parser.add_argument(
+            "--exchange-rate",
+            type=float,
+            default=0.92,
+            help="Exchange rate to convert prices to Euro (default: 0.92 for USD to EUR)",
+        )
 
     def handle(self, *args, **options):
+        urls_string = options["urls"]
         base_url = options["base_url"].rstrip("/")
-        page_size = options["page_size"]
-        max_pages = options["max_pages"]
-        # Default to True for download_images unless --no-download-images is used
-        # Check if download_images was explicitly set to False (via --no-download-images)
         download_images = options.get("download_images")
         if download_images is None:
-            # Not explicitly set, default to True
             download_images = True
         update_existing = options.get("update_existing", False)
         exchange_rate = options.get("exchange_rate", 0.92)
-        
+
+        # Parse URLs
+        urls = [url.strip() for url in urls_string.split(",") if url.strip()]
+        if not urls:
+            self.stdout.write(self.style.ERROR("No valid URLs provided"))
+            return
+
         self.stdout.write(f"Using exchange rate: {exchange_rate} (1 source currency = {exchange_rate} EUR)")
+        self.stdout.write(self.style.SUCCESS(f"Starting import of {len(urls)} products from URLs..."))
+        self.stdout.write(f"Download images: {download_images}")
 
         main_category = self._get_or_create_main_category()
         category_map = self._get_or_create_target_categories(main_category)
-        self.stdout.write(self.style.SUCCESS("Starting import from Zahra Rubab..."))
-        self.stdout.write(f"Download images: {download_images}")
 
-        page = 1
         imported = 0
         skipped = 0
+        errors = 0
 
-        while True:
-            if max_pages and page > max_pages:
-                break
+        for url in urls:
+            try:
+                # Extract handle from URL
+                handle = self._extract_handle_from_url(url)
+                if not handle:
+                    self.stdout.write(self.style.ERROR(f"Could not extract handle from URL: {url}"))
+                    errors += 1
+                    continue
 
-            products = self._fetch_products(base_url, page, page_size)
-            if not products:
-                break
+                self.stdout.write(f"\n{'='*60}")
+                self.stdout.write(f"Processing: {url}")
+                self.stdout.write(f"Handle: {handle}")
 
-            for product in products:
+                # Fetch product from Shopify API
+                product = self._fetch_product_by_handle(base_url, handle)
+                if not product:
+                    self.stdout.write(self.style.ERROR(f"Product not found: {handle}"))
+                    errors += 1
+                    continue
+
+                # Import product with featured and new arrival flags
                 result = self._import_product(
                     product,
                     main_category=main_category,
@@ -68,25 +104,55 @@ class Command(BaseCommand):
                     download_images=download_images,
                     update_existing=update_existing,
                     exchange_rate=exchange_rate,
+                    force_featured=True,  # Always mark as featured and new arrival
                 )
                 if result:
                     imported += 1
                 else:
                     skipped += 1
 
-            page += 1
-            time.sleep(0.2)
+                time.sleep(0.5)  # Rate limiting
 
-        self.stdout.write(
-            self.style.SUCCESS(f"Done. Imported: {imported}, Skipped: {skipped}")
-        )
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"Error processing {url}: {str(e)}"))
+                errors += 1
+                continue
 
-    def _fetch_products(self, base_url, page, limit):
-        url = urljoin(base_url, f"/products.json?limit={limit}&page={page}")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        payload = response.json()
-        return payload.get("products", [])
+        self.stdout.write("\n" + "="*60)
+        self.stdout.write(self.style.SUCCESS("SUMMARY:"))
+        self.stdout.write(f"  Imported: {imported}")
+        self.stdout.write(f"  Skipped: {skipped}")
+        self.stdout.write(f"  Errors: {errors}")
+
+    def _extract_handle_from_url(self, url):
+        """Extract product handle from zahrarubab.com URL"""
+        try:
+            # URL format: https://zahrarubab.com/products/zr-2571-ice-blue
+            parsed = urlparse(url)
+            path = parsed.path.strip("/")
+            
+            # Extract handle from path (e.g., "products/zr-2571-ice-blue" -> "zr-2571-ice-blue")
+            if "/products/" in path:
+                handle = path.split("/products/")[-1]
+                # Remove query parameters if any
+                handle = handle.split("?")[0]
+                return handle
+            return None
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Error extracting handle: {e}"))
+            return None
+
+    def _fetch_product_by_handle(self, base_url, handle):
+        """Fetch a single product from Shopify API by handle"""
+        url = urljoin(base_url, f"/products/{handle}.json")
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            return payload.get("product")
+        except requests.exceptions.RequestException as e:
+            self.stdout.write(self.style.ERROR(f"Failed to fetch product {handle}: {e}"))
+            return None
 
     def _get_or_create_main_category(self):
         category, _ = Category.objects.get_or_create(
@@ -159,10 +225,9 @@ class Command(BaseCommand):
             ("Zardozi - Nikkah Edit", "zardozi-nikkah-edit", parent),
             ("Zardozi - Nikkah Edit Summer", "zardozi-nikkah-edit-summer", parent),
         ]
-        
+
         categories = {}
         for name, slug, category_parent in category_list:
-            # Use provided parent or main parent
             parent_category = category_parent if category_parent else parent
             category, _ = Category.objects.get_or_create(
                 slug=slug,
@@ -179,7 +244,16 @@ class Command(BaseCommand):
             categories[name.lower()] = category
         return categories
 
-    def _import_product(self, product, main_category, category_map, download_images, update_existing, exchange_rate=0.92):
+    def _import_product(
+        self,
+        product,
+        main_category,
+        category_map,
+        download_images,
+        update_existing,
+        exchange_rate=0.92,
+        force_featured=False,
+    ):
         title = product.get("title") or ""
         handle = product.get("handle") or ""
         vendor = product.get("vendor") or ""
@@ -194,6 +268,7 @@ class Command(BaseCommand):
         item_sku = self._build_item_sku(product, variants)
         existing = Item.objects.filter(sku=item_sku).first()
         if existing and not update_existing:
+            self.stdout.write(self.style.WARNING(f"  Product {item_sku} already exists, skipping (use --update-existing to update)"))
             return False
 
         prices = [self._to_number(v.get("price")) for v in variants if v.get("price")]
@@ -204,108 +279,34 @@ class Command(BaseCommand):
         ]
 
         # Convert prices to Euro
-        # MRP is the base/regular price (use compare_at_price if available, otherwise use price)
         mrp_raw = max(compare_prices) if compare_prices else (min(prices) if prices else None)
         mrp = int(round(mrp_raw * exchange_rate)) if mrp_raw is not None else None
-        
-        # Calculate discount percentage if compare_at_price exists and is higher than price
+
+        # Calculate discount percentage
         if compare_prices and prices:
             min_price = min(prices)
             max_compare = max(compare_prices)
-            # Convert to Euro for comparison
             min_price_eur = int(round(min_price * exchange_rate))
             max_compare_eur = int(round(max_compare * exchange_rate))
-            
+
             if max_compare_eur > min_price_eur:
-                # There's a discount - calculate percentage
                 discount = self._calc_discount(max_compare_eur, min_price_eur)
             else:
                 discount = 0
         else:
             discount = 0
-        
-        # Sale Price should always equal MRP (they are the same)
-        # The discount field differentiates whether it's discounted or not
-        # Frontend will calculate: actual_sale_price = mrp - (mrp * discount / 100)
+
         sale_price = mrp
 
-        # List of specific products to mark as new arrival and featured (by SKU pattern)
-        featured_new_skus = [
-            "ZR-2537",
-            "ZR-2434",
-            "ZR-2305",
-            "ZR-2528",
-            "ZR-2439",
-            "ZR-2536",
-            "ZR-2518",
-            "ZR-2513",
-            "ZR-2447",
-            "ZR-2222",
-            "ZR-2120",  # For "3 Piece Stitched - ZR 2120 Gold"
-            "ZR-2117",
-            "ZR-2331",
-            "ZR-2349",
-            "ZR-2344",
-            "ZR-2357",
-            "ZR-2431-A",
-            "ZR-2429-A",
-            "ZR-2427-A",
-            "ZR-2441",
-            "ZR-2533",
-            "ZR-2115",
-            "ZR-2347",
-            "ZR-2534",
-            "ZR-2426-A",
-            "ZR-2431-B",
-            "ZR-2432-B",
-            "ZR-2426-B",
-            # New products added from URLs
-            "ZR-2571",
-            "ZR-2568",
-            "ZR-2569",
-            "ZR-2572",
-            "ZR-2570",
-            "ZR-2573",
-            "ZR-2614",
-            "ZR-2612",
-            "ZR-2611",
-            "ZR-2615",
-            "ZR-2613",
-            "ZR-2616",
-        ]
-        
-        # Check if current product SKU matches any of the featured/new SKUs
-        item_sku_upper = item_sku.upper()
-        is_featured_product = False
-        
-        # Check by SKU - match if item SKU starts with or contains the featured SKU
-        for featured_sku in featured_new_skus:
-            featured_sku_upper = featured_sku.upper()
-            # Check if item SKU matches the featured SKU (exact match or starts with)
-            if item_sku_upper == featured_sku_upper or item_sku_upper.startswith(featured_sku_upper + "-") or item_sku_upper.startswith(featured_sku_upper + " "):
-                is_featured_product = True
-                break
-            # Also check if featured SKU is in item SKU (for cases like ZR-2431-A matching ZR-2431-A-B)
-            if featured_sku_upper in item_sku_upper:
-                # Make sure it's not a partial match (e.g., ZR-243 should not match ZR-2431)
-                if len(featured_sku_upper) >= 6:  # At least "ZR-XXX" format
-                    is_featured_product = True
-                    break
-        
-        # Only assign isNewArrival and isFeatured to matching products
-        # Explicitly set to 0 for all other products
-        is_new = 1 if is_featured_product else 0
-        is_featured = 1 if is_featured_product else 0
-        
-        if is_new:
-            self.stdout.write(self.style.SUCCESS(f"  → Marked as NEW ARRIVAL: {item_sku} ({title[:50]})"))
-        if is_featured:
-            self.stdout.write(self.style.SUCCESS(f"  → Marked as FEATURED: {item_sku} ({title[:50]})"))
-        if not is_featured_product and existing:
-            # Log when removing from featured/new for existing products
-            if existing.isNewArrival == 1 or existing.isFeatured == 1:
-                self.stdout.write(self.style.WARNING(f"  → Removed from NEW ARRIVAL/FEATURED: {item_sku}"))
-        
+        # Force featured and new arrival if requested
+        if force_featured:
+            is_new = 1
+            is_featured = 1
+            self.stdout.write(self.style.SUCCESS(f"  → Marked as NEW ARRIVAL and FEATURED: {item_sku}"))
+        else:
+            is_new = 0
+            is_featured = 0
+
         item_values = {
             "name": title[:150] or "Zahra Rubab Product",
             "slug": slug,
@@ -331,17 +332,19 @@ class Command(BaseCommand):
                 setattr(existing, key, value)
             item = existing
             item.save()
+            self.stdout.write(self.style.SUCCESS(f"  ✓ Updated product: {item_sku}"))
         else:
             item = Item.objects.create(**item_values)
+            self.stdout.write(self.style.SUCCESS(f"  ✓ Created product: {item_sku}"))
 
-        # Match product to appropriate categories based on title, tags, and product type
+        # Match product to appropriate categories
         matched_categories = self._match_product_categories(
             title=title,
             tags=tags,
             product_type=product.get("product_type") or "",
             category_map=category_map,
         )
-        
+
         # Always add to "All IN STORE" category
         if category_map.get("all in store"):
             if category_map["all in store"] not in matched_categories:
@@ -354,19 +357,19 @@ class Command(BaseCommand):
                 itemId=item,
                 defaults={"level": 2, "status": CategoryItem.ACTIVE},
             )
-        
+
         if matched_categories:
             category_names = [cat.name for cat in matched_categories]
             self.stdout.write(f"  → Added to categories: {', '.join(category_names[:5])}{'...' if len(category_names) > 5 else ''}")
 
-        # Download images if enabled and available
+        # Download images if enabled
         if download_images:
             if images:
                 self._download_images(item, images)
             else:
-                self.stdout.write(self.style.WARNING(f"No images to download for product {item.sku}"))
+                self.stdout.write(self.style.WARNING(f"  No images to download for product {item.sku}"))
         else:
-            self.stdout.write(self.style.WARNING(f"Image downloading is disabled for product {item.sku}"))
+            self.stdout.write(self.style.WARNING(f"  Image downloading is disabled for product {item.sku}"))
 
         self._import_variants(item, product, variants, exchange_rate)
         return True
@@ -374,12 +377,12 @@ class Command(BaseCommand):
     def _import_variants(self, item, product, variants, exchange_rate=0.92):
         options = product.get("options") or []
         option_names = {opt.get("name", "").lower(): opt.get("position") for opt in options}
-        
+
         if not variants:
-            self.stdout.write(self.style.WARNING(f"No variants found for product {item.sku}"))
+            self.stdout.write(self.style.WARNING(f"  No variants found for product {item.sku}"))
             return
-        
-        self.stdout.write(f"Importing {len(variants)} variant(s) for product {item.sku}...")
+
+        self.stdout.write(f"  Importing {len(variants)} variant(s) for product {item.sku}...")
         imported_count = 0
 
         for variant in variants:
@@ -397,17 +400,13 @@ class Command(BaseCommand):
             sku = variant.get("sku") or f"ZR-VAR-{variant.get('id')}"
             sku = self._ensure_unique_variant_sku(sku, item, variant)
             price_raw = self._to_number(variant.get("price"))
-            # Convert price to Euro
             price = price_raw * exchange_rate if price_raw is not None else None
 
-            # Try to get by SKU first (since it's unique)
             variant_obj = ProductVariant.objects.filter(sku=sku).first()
-            
-            # Random stock quantity between 2-229
+
             random_stock = random.randint(2, 229)
-            
+
             if variant_obj:
-                # Update existing variant
                 variant_obj.item = item
                 variant_obj.color = color[:50]
                 variant_obj.size = size
@@ -416,12 +415,10 @@ class Command(BaseCommand):
                 variant_obj.status = ProductVariant.ACTIVE
                 variant_obj.save()
                 imported_count += 1
-                self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
+                self.stdout.write(f"    ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
             else:
-                # Random stock quantity between 2-229
                 random_stock = random.randint(2, 229)
-                
-                # Try to get by item, color, size combination
+
                 variant_obj, created = ProductVariant.objects.get_or_create(
                     item=item,
                     color=color[:50],
@@ -433,7 +430,6 @@ class Command(BaseCommand):
                         "status": ProductVariant.ACTIVE,
                     },
                 )
-                # If it already existed with different SKU, update it
                 if not created:
                     variant_obj.sku = sku[:100]
                     variant_obj.stock_quantity = random_stock
@@ -441,123 +437,108 @@ class Command(BaseCommand):
                     variant_obj.status = ProductVariant.ACTIVE
                     variant_obj.save()
                     imported_count += 1
-                    self.stdout.write(f"  ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
+                    self.stdout.write(f"    ✓ Updated variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
                 else:
                     imported_count += 1
-                    self.stdout.write(f"  ✓ Created variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
-        
+                    self.stdout.write(f"    ✓ Created variant: {color} - {size} (SKU: {sku}, Stock: {random_stock})")
+
         self.stdout.write(self.style.SUCCESS(f"  Imported {imported_count} variant(s) for product {item.sku}"))
 
     def _get_full_size_image_url(self, url):
-        """
-        Convert Shopify image URL to full-size original image URL.
-        Removes size suffixes like _1024x1024, _2048x2048, _small, _medium, _large, etc.
-        """
+        """Convert Shopify image URL to full-size original image URL."""
         if not url:
             return url
-        
-        # Remove common Shopify size suffixes from the URL
-        # Pattern: _1024x1024, _2048x2048, _small, _medium, _large, etc.
-        import re
-        
-        # Remove size suffixes before file extension (e.g., image_1024x1024.jpg -> image.jpg)
-        # Match patterns like _1024x1024, _2048x2048, _small, _medium, _large, _grande, _master
-        url = re.sub(r'_(\d+x\d+|small|medium|large|grande|master|compact|thumb)(?=\.)', '', url)
-        
-        # Also remove query parameters that might specify dimensions (but keep version parameter)
+
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+        url = re.sub(r"_(\d+x\d+|small|medium|large|grande|master|compact|thumb)(?=\.)", "", url)
+
         parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
-        
-        # Keep only the 'v' (version) parameter, remove dimension-related parameters
-        if 'v' in query_params:
-            new_query = {'v': query_params['v']}
+
+        if "v" in query_params:
+            new_query = {"v": query_params["v"]}
             new_query_string = urlencode(new_query, doseq=True)
         else:
-            new_query_string = ''
-        
-        # Reconstruct URL without size parameters
+            new_query_string = ""
+
         new_parsed = parsed._replace(query=new_query_string)
         full_size_url = urlunparse(new_parsed)
-        
+
         return full_size_url
 
     def _download_images(self, item, images):
         if not images:
-            self.stdout.write(self.style.WARNING(f"No images found for product {item.sku}"))
+            self.stdout.write(self.style.WARNING(f"  No images found for product {item.sku}"))
             return
-        
-        # Check if main image already exists
-        has_main_image = item.image and hasattr(item.image, 'name') and item.image.name
-        
-        # Check if gallery images exist
+
+        has_main_image = item.image and hasattr(item.image, "name") and item.image.name
         existing_gallery_count = ItemGallery.objects.filter(itemId=item, status=ItemGallery.ACTIVE).count()
-        
-        # Skip if images already downloaded
+
         if has_main_image and existing_gallery_count >= len(images) - 1:
-            self.stdout.write(self.style.SUCCESS(f"Skipping image download for {item.sku} - images already exist (main: {bool(has_main_image)}, gallery: {existing_gallery_count})"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  Skipping image download for {item.sku} - images already exist (main: {bool(has_main_image)}, gallery: {existing_gallery_count})"
+                )
+            )
             return
-        
-        self.stdout.write(f"Downloading {len(images)} image(s) for product {item.sku}...")
-        
+
+        self.stdout.write(f"  Downloading {len(images)} image(s) for product {item.sku}...")
+
         for index, image_data in enumerate(images):
             original_url = image_data.get("src")
             if not original_url:
-                self.stdout.write(self.style.WARNING(f"Skipping image {index + 1} - no URL"))
+                self.stdout.write(self.style.WARNING(f"    Skipping image {index + 1} - no URL"))
                 continue
 
-            # Get full-size image URL
             full_size_url = self._get_full_size_image_url(original_url)
-            
+
             try:
-                self.stdout.write(f"  Downloading image {index + 1} (full size) from {full_size_url[:60]}...")
-                response = requests.get(full_size_url, timeout=60)  # Increased timeout for larger images
+                self.stdout.write(f"    Downloading image {index + 1} (full size) from {full_size_url[:60]}...")
+                response = requests.get(full_size_url, timeout=60)
                 response.raise_for_status()
-                
-                # Get file extension from URL or default to jpg
-                file_ext = 'jpg'
-                if '.' in full_size_url:
-                    ext = full_size_url.split('.')[-1].split('?')[0].lower()
-                    if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
+
+                file_ext = "jpg"
+                if "." in full_size_url:
+                    ext = full_size_url.split(".")[-1].split("?")[0].lower()
+                    if ext in ["jpg", "jpeg", "png", "webp", "gif"]:
                         file_ext = ext
-                
+
                 filename = f"zahrarubab_{item.sku}_{index + 1}.{file_ext}"
-                
-                # Skip if main image already exists
+
                 if index == 0:
                     if has_main_image:
-                        self.stdout.write(f"  ⊘ Skipping main image {index + 1} - already exists")
+                        self.stdout.write(f"    ⊘ Skipping main image {index + 1} - already exists")
                         continue
                     content = ContentFile(response.content)
                     item.image.save(filename, content, save=True)
                     file_size_kb = len(response.content) / 1024
-                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved main image: {filename} ({file_size_kb:.1f} KB)"))
+                    self.stdout.write(self.style.SUCCESS(f"    ✓ Saved main image: {filename} ({file_size_kb:.1f} KB)"))
                 else:
-                    # Check if this gallery image already exists
                     existing_gallery = ItemGallery.objects.filter(
-                        itemId=item, 
+                        itemId=item,
                         status=ItemGallery.ACTIVE,
-                        image__icontains=f"zahrarubab_{item.sku}_{index + 1}"
+                        image__icontains=f"zahrarubab_{item.sku}_{index + 1}",
                     ).first()
                     if existing_gallery:
-                        self.stdout.write(f"  ⊘ Skipping gallery image {index + 1} - already exists")
+                        self.stdout.write(f"    ⊘ Skipping gallery image {index + 1} - already exists")
                         continue
                     content = ContentFile(response.content)
                     gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
                     gallery.image.save(filename, content, save=True)
                     file_size_kb = len(response.content) / 1024
-                    self.stdout.write(self.style.SUCCESS(f"  ✓ Saved gallery image: {filename} ({file_size_kb:.1f} KB)"))
+                    self.stdout.write(self.style.SUCCESS(f"    ✓ Saved gallery image: {filename} ({file_size_kb:.1f} KB)"))
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"  ✗ Failed to download image {index + 1}: {str(e)}"))
-                # Try fallback to original URL if full-size fails
+                self.stdout.write(self.style.ERROR(f"    ✗ Failed to download image {index + 1}: {str(e)}"))
                 if full_size_url != original_url:
                     try:
-                        self.stdout.write(f"  Trying fallback URL: {original_url[:60]}...")
+                        self.stdout.write(f"    Trying fallback URL: {original_url[:60]}...")
                         response = requests.get(original_url, timeout=60)
                         response.raise_for_status()
-                        file_ext = 'jpg'
-                        if '.' in original_url:
-                            ext = original_url.split('.')[-1].split('?')[0].lower()
-                            if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
+                        file_ext = "jpg"
+                        if "." in original_url:
+                            ext = original_url.split(".")[-1].split("?")[0].lower()
+                            if ext in ["jpg", "jpeg", "png", "webp", "gif"]:
                                 file_ext = ext
                         filename = f"zahrarubab_{item.sku}_{index + 1}.{file_ext}"
                         content = ContentFile(response.content)
@@ -566,9 +547,9 @@ class Command(BaseCommand):
                         else:
                             gallery = ItemGallery(itemId=item, status=ItemGallery.ACTIVE)
                             gallery.image.save(filename, content, save=True)
-                        self.stdout.write(self.style.SUCCESS(f"  ✓ Saved using fallback URL: {filename}"))
+                        self.stdout.write(self.style.SUCCESS(f"    ✓ Saved using fallback URL: {filename}"))
                     except Exception as e2:
-                        self.stdout.write(self.style.ERROR(f"  ✗ Fallback also failed: {str(e2)}"))
+                        self.stdout.write(self.style.ERROR(f"    ✗ Fallback also failed: {str(e2)}"))
                 continue
 
     def _clean_html(self, html):
@@ -613,15 +594,11 @@ class Command(BaseCommand):
         return None
 
     def _match_product_categories(self, title, tags, product_type, category_map):
-        """
-        Match product to appropriate categories based on title, tags, and product type.
-        Returns list of matched categories.
-        """
+        """Match product to appropriate categories based on title, tags, and product type."""
         tags_text = ", ".join(tags) if isinstance(tags, list) else (tags or "")
         search_text = " ".join([title or "", tags_text, product_type or ""]).lower()
         matches = []
-        
-        # Define keyword mappings for each category
+
         category_keywords = {
             "2 pc - cotton viscose": ["2 pc", "cotton viscose", "two piece cotton viscose"],
             "2 pc - karandi unstitched": ["2 pc karandi", "two piece karandi", "karandi unstitched 2pc"],
@@ -650,7 +627,7 @@ class Command(BaseCommand):
             "menswear": ["menswear", "men wear", "male clothing"],
             "moon light": ["moon light", "moonlight"],
             "ready to wear - summer": ["ready to wear", "rtw", "summer ready"],
-            "shop by price": [],  # Will be assigned randomly or by price range
+            "shop by price": [],
             "silk": ["silk", "raw silk", "pure silk"],
             "studio samples": ["sample", "studio sample"],
             "winter": ["winter", "winter wear", "warm"],
@@ -660,49 +637,41 @@ class Command(BaseCommand):
             "zardozi - nikkah edit": ["zardozi", "nikkah", "nikkah edit", "zardozi nikkah", "zr-", "zr "],
             "zardozi - nikkah edit summer": ["zardozi summer", "nikkah edit summer", "zardozi nikkah summer", "nikkah summer"],
         }
-        
-        # Match categories based on keywords
+
         for category_name, keywords in category_keywords.items():
             if category_name not in category_map:
                 continue
-                
-            # Check if any keyword matches
+
             matched = False
             for keyword in keywords:
                 if keyword in search_text:
                     matched = True
                     break
-            
-            # Special handling for certain categories
+
             if category_name == "shop by price":
-                # Add 10% of products randomly to shop by price
                 if random.random() < 0.1:
                     matched = True
             elif category_name == "end of season":
-                # Check for sale/clearance indicators
                 if any(word in search_text for word in ["sale", "clearance", "discount", "end of season"]):
                     matched = True
             elif category_name == "zardozi - nikkah edit":
-                # More aggressive matching for Zardozi - match if product has ZR- pattern or zardozi/nikkah keywords
                 if "zr-" in search_text or "zr " in search_text or "zardozi" in search_text or "nikkah" in search_text:
                     matched = True
-            
+
             if matched:
                 matches.append(category_map[category_name])
-        
-        # Ensure at least one category is matched (fallback to common categories)
+
         if not matches:
-            # Default fallback categories - prioritize Zardozi if product has ZR- pattern
             if "zr-" in search_text or "zr " in search_text:
                 fallback_categories = ["zardozi - nikkah edit", "women", "all in store"]
             else:
                 fallback_categories = ["women", "all in store"]
-            
+
             for fallback in fallback_categories:
                 if fallback in category_map:
                     matches.append(category_map[fallback])
                     break
-        
+
         return matches
 
     def _ensure_unique_variant_sku(self, sku, item, variant):

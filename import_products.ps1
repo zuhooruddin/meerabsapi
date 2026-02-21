@@ -1,0 +1,31 @@
+# PowerShell script to import specific Zahra Rubab products by URL
+# All products will be marked as featured and new arrival
+
+$urls = @(
+    "https://zahrarubab.com/products/zr-2571-ice-blue",
+    "https://zahrarubab.com/products/zr-2571-fawn",
+    "https://zahrarubab.com/products/zr-2568-beige",
+    "https://zahrarubab.com/products/zr-2569-baby-blue",
+    "https://zahrarubab.com/products/zr-2569-off-white",
+    "https://zahrarubab.com/products/zr-2572-rust",
+    "https://zahrarubab.com/products/zr-2572-coral",
+    "https://zahrarubab.com/products/zr-2570-gold",
+    "https://zahrarubab.com/products/zr-2570-t-pink",
+    "https://zahrarubab.com/products/zr-2573-honey",
+    "https://zahrarubab.com/products/zr-2573-sage-green",
+    "https://zahrarubab.com/products/zr-2614-blue",
+    "https://zahrarubab.com/products/zr-2612-black",
+    "https://zahrarubab.com/products/zr-2611-maroon",
+    "https://zahrarubab.com/products/zr-2615-aqua",
+    "https://zahrarubab.com/products/zr-2614-lime-yellow",
+    "https://zahrarubab.com/products/zr-2613-rust",
+    "https://zahrarubab.com/products/zr-2612-mustard",
+    "https://zahrarubab.com/products/zr-2616-olive",
+    "https://zahrarubab.com/products/zr-2615-fawn",
+    "https://zahrarubab.com/products/zr-2613-zinc",
+    "https://zahrarubab.com/products/zr-2616-coral-pink"
+)
+
+$urlsString = $urls -join ","
+
+python manage.py import_zahrarubab_products_by_url --urls $urlsString --update-existing
