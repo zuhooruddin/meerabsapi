@@ -46,8 +46,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--exchange-rate",
             type=float,
-            default=0.92,
-            help="Exchange rate to convert prices to Euro (default: 0.92 for USD to EUR)",
+            default=0.0033,
+            help="Exchange rate to convert prices to Euro (default: 0.0033 for PKR to EUR, meaning 1 EUR ≈ 303 PKR)",
         )
 
     def handle(self, *args, **options):
@@ -57,7 +57,7 @@ class Command(BaseCommand):
         if download_images is None:
             download_images = True
         update_existing = options.get("update_existing", False)
-        exchange_rate = options.get("exchange_rate", 0.92)
+        exchange_rate = options.get("exchange_rate", 0.0033)
 
         # Parse URLs
         urls = [url.strip() for url in urls_string.split(",") if url.strip()]
@@ -270,7 +270,7 @@ class Command(BaseCommand):
         category_map,
         download_images,
         update_existing,
-        exchange_rate=0.92,
+        exchange_rate=0.0033,
         force_featured=False,
     ):
         title = product.get("title") or ""

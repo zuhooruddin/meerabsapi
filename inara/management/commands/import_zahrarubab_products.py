@@ -26,7 +26,7 @@ class Command(BaseCommand):
         parser.add_argument("--max-pages", type=int, default=0)
         parser.add_argument("--no-download-images", dest="download_images", action="store_false", help="Skip downloading images (default: images are downloaded)")
         parser.add_argument("--update-existing", action="store_true")
-        parser.add_argument("--exchange-rate", type=float, default=0.92, help="Exchange rate to convert prices to Euro (default: 0.92 for USD to EUR)")
+        parser.add_argument("--exchange-rate", type=float, default=0.0033, help="Exchange rate to convert prices to Euro (default: 0.0033 for PKR to EUR, meaning 1 EUR ≈ 303 PKR)")
 
     def handle(self, *args, **options):
         base_url = options["base_url"].rstrip("/")
@@ -39,7 +39,7 @@ class Command(BaseCommand):
             # Not explicitly set, default to True
             download_images = True
         update_existing = options.get("update_existing", False)
-        exchange_rate = options.get("exchange_rate", 0.92)
+        exchange_rate = options.get("exchange_rate", 0.0033)
         
         self.stdout.write(f"Using exchange rate: {exchange_rate} (1 source currency = {exchange_rate} EUR)")
 
@@ -179,7 +179,7 @@ class Command(BaseCommand):
             categories[name.lower()] = category
         return categories
 
-    def _import_product(self, product, main_category, category_map, download_images, update_existing, exchange_rate=0.92):
+    def _import_product(self, product, main_category, category_map, download_images, update_existing, exchange_rate=0.0033):
         title = product.get("title") or ""
         handle = product.get("handle") or ""
         vendor = product.get("vendor") or ""
@@ -371,7 +371,7 @@ class Command(BaseCommand):
         self._import_variants(item, product, variants, exchange_rate)
         return True
 
-    def _import_variants(self, item, product, variants, exchange_rate=0.92):
+    def _import_variants(self, item, product, variants, exchange_rate=0.0033):
         options = product.get("options") or []
         option_names = {opt.get("name", "").lower(): opt.get("position") for opt in options}
         
