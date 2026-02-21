@@ -291,31 +291,44 @@ class ItemWithVariantsSerializer(serializers.ModelSerializer):
         }
     
     def get_gallery(self, obj):
-        """Get all gallery images including main product image"""
+        """Get all gallery images including main product image.
+
+        Uses prefetched_gallery when available (set by the view's Prefetch())
+        to avoid an extra DB query per product (N+1 fix).
+        The result is cached on the instance so get_imgGroup re-uses it.
+        """
+        # Return cached result if already computed for this instance
+        if hasattr(obj, '_cached_gallery'):
+            return obj._cached_gallery
+
         gallery_images = []
-        
-        # Add main product image first
-        if obj.image:
+
+        # Add main product image first (skip the default placeholder)
+        DEFAULT_PLACEHOLDER = "idris/asset/default-item-image.jpg"
+        if obj.image and obj.image.name and obj.image.name != DEFAULT_PLACEHOLDER:
             gallery_images.append(obj.image.url)
-        
-        # Get all active gallery images
-        from inara.models import ItemGallery
-        gallery_items = ItemGallery.objects.filter(
-            itemId=obj.pk, 
-            status=ItemGallery.ACTIVE
-        ).order_by('id')
-        
+
+        # Use prefetched gallery if the queryset provided it; otherwise fall back
+        gallery_items = getattr(obj, 'prefetched_gallery', None)
+        if gallery_items is None:
+            from inara.models import ItemGallery
+            gallery_items = ItemGallery.objects.filter(
+                itemId=obj.pk,
+                status=ItemGallery.ACTIVE,
+            ).order_by('id')
+
         for gallery_item in gallery_items:
             if gallery_item.image:
                 image_url = gallery_item.image.url
-                # Avoid duplicates (in case main image is also in gallery)
                 if image_url not in gallery_images:
                     gallery_images.append(image_url)
-        
+
+        # Cache on instance to avoid double work for imgGroup
+        obj._cached_gallery = gallery_images
         return gallery_images
-    
+
     def get_imgGroup(self, obj):
-        """Alias for gallery - for backward compatibility"""
+        """Alias for gallery — re-uses cached result, no extra DB query."""
         return self.get_gallery(obj)
     
     def to_representation(self, instance):

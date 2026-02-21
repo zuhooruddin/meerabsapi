@@ -3029,7 +3029,23 @@ class getAllWebsitePaginatedItem(generics.ListCreateAPIView):
     def get_queryset(self):
         itemObject = {}
         try:
-            itemObject = Item.objects.filter(appliesOnline=1,status=Item.ACTIVE).prefetch_related('variants').order_by("-newArrivalTill","-isFeatured","-stock")
+            from django.db.models import Prefetch
+            from inara.models import ItemGallery
+            # Prefetch both variants AND gallery images to eliminate N+1 queries.
+            # Without prefetch, each serializer call runs a separate DB query per product.
+            itemObject = (
+                Item.objects
+                .filter(appliesOnline=1, status=Item.ACTIVE)
+                .prefetch_related(
+                    'variants',
+                    Prefetch(
+                        'itemgallery_set',
+                        queryset=ItemGallery.objects.filter(status=ItemGallery.ACTIVE).order_by('id'),
+                        to_attr='prefetched_gallery',
+                    ),
+                )
+                .order_by("-newArrivalTill", "-isFeatured", "-stock")
+            )
         except Exception as e:
             logger.error("Exception in getAllWebsitePaginatedItem: %s " %(str(e)))
         return itemObject

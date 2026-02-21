@@ -491,7 +491,16 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"  No images found for product {item.sku}"))
             return
 
-        has_main_image = item.image and hasattr(item.image, "name") and item.image.name
+        # A "real" main image means it is NOT the default placeholder.
+        # item.image always has a name (the placeholder), so we must explicitly
+        # check it is NOT the default before treating it as already-downloaded.
+        DEFAULT_PLACEHOLDER = "idris/asset/default-item-image.jpg"
+        has_main_image = (
+            item.image
+            and hasattr(item.image, "name")
+            and item.image.name
+            and item.image.name != DEFAULT_PLACEHOLDER
+        )
         existing_gallery_count = ItemGallery.objects.filter(itemId=item, status=ItemGallery.ACTIVE).count()
 
         if has_main_image and existing_gallery_count >= len(images) - 1:
