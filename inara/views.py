@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import site
 from datetime import datetime, timedelta
+from django.utils import timezone
 from urllib import response
 from django.db.models import Sum,Case,When
 from django.db.models import Count
@@ -866,7 +867,7 @@ class getAllPaginatedItems(generics.ListCreateAPIView):
     def get_queryset(self):
         itemObject={}
         try:
-            itemObject = Item.objects.filter()
+            itemObject = Item.objects.filter().order_by('-id')
         except Exception as e:
             logger.error("Exception in getAllPaginatedItems: %s " %(str(e)))
         return itemObject
@@ -4250,6 +4251,38 @@ def addItem(request):
             except (ValueError, TypeError):
                 return None
         
+        # Helper function to convert datetime string to timezone-aware datetime
+        def safe_datetime(value):
+            if not value or value == '' or value == 'null' or value == 'None':
+                return None
+            try:
+                # Try parsing the datetime string
+                if isinstance(value, str):
+                    # Try common datetime formats
+                    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S.%f']:
+                        try:
+                            dt = datetime.strptime(value, fmt)
+                            # Make it timezone-aware
+                            return timezone.make_aware(dt)
+                        except ValueError:
+                            continue
+                    # If no format matches, try Django's default parser
+                    from django.utils.dateparse import parse_datetime, parse_date
+                    dt = parse_datetime(value) or parse_date(value)
+                    if dt:
+                        if isinstance(dt, datetime):
+                            return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+                        else:
+                            # It's a date, convert to datetime at midnight
+                            dt = datetime.combine(dt, datetime.min.time())
+                            return timezone.make_aware(dt)
+                elif isinstance(value, datetime):
+                    # Already a datetime, make it timezone-aware if needed
+                    return timezone.make_aware(value) if timezone.is_naive(value) else value
+                return None
+            except (ValueError, TypeError) as e:
+                return None
+        
         # Clothing-specific fields
         brand = request.POST.get('brand', '')
         product_category = request.POST.get('product_category', '')
@@ -4281,7 +4314,7 @@ def addItem(request):
             metaTitle=metaTitle,
             metaDescription=metaDescription,
             isNewArrival=safe_int(isNewArrival) if isNewArrival else 0,
-            newArrivalTill=newArrivalTill,
+            newArrivalTill=safe_datetime(newArrivalTill),
             isFeatured=safe_int(isFeatured) if isFeatured else 0,
             discount=safe_int(discount) if discount else 0,
             # Clothing-specific fields

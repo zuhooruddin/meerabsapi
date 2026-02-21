@@ -277,6 +277,7 @@ class Item(models.Model):
 
     class Meta:
         db_table = "item"
+        ordering = ['-id']  # Default ordering to prevent pagination warnings
         indexes = [
             models.Index(fields=['slug'], name='item_slug_idx'),
             models.Index(fields=['status', 'appliesOnline'], name='item_status_applies_idx'),
