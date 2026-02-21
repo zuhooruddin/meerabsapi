@@ -87,7 +87,7 @@ class Command(BaseCommand):
 
                 self.stdout.write(f"\n{'='*60}")
                 self.stdout.write(f"Processing: {url}")
-                self.stdout.write(f"Handle: {handle}")
+                self.stdout.write(f"Extracted handle: {handle}")
 
                 # Fetch product from Shopify API
                 product = self._fetch_product_by_handle(base_url, handle)
@@ -128,18 +128,37 @@ class Command(BaseCommand):
         """Extract product handle from zahrarubab.com URL"""
         try:
             # URL format: https://zahrarubab.com/products/zr-2571-ice-blue
+            # or: https://zahrarubab.com/products/zr-2571-ice-blue?_pos=2&_sid=...
+            
+            # Use regex to extract handle more reliably
+            pattern = r'/products/([^/?]+)'
+            match = re.search(pattern, url)
+            if match:
+                handle = match.group(1)
+                return handle.strip()
+            
+            # Fallback: parse URL manually
             parsed = urlparse(url)
             path = parsed.path.strip("/")
             
-            # Extract handle from path (e.g., "products/zr-2571-ice-blue" -> "zr-2571-ice-blue")
-            if "/products/" in path:
+            # Extract handle from path
+            if path.startswith("products/"):
+                handle = path[9:]  # Remove "products/" prefix (9 characters)
+            elif "/products/" in path:
                 handle = path.split("/products/")[-1]
-                # Remove query parameters if any
-                handle = handle.split("?")[0]
+            else:
+                # If path doesn't contain "products/", assume the whole path is the handle
+                handle = path
+            
+            # Remove query parameters
+            handle = handle.split("?")[0]
+            handle = handle.strip("/")
+            
+            if handle:
                 return handle
             return None
         except Exception as e:
-            self.stdout.write(self.style.WARNING(f"Error extracting handle: {e}"))
+            self.stdout.write(self.style.WARNING(f"Error extracting handle from {url}: {e}"))
             return None
 
     def _fetch_product_by_handle(self, base_url, handle):
